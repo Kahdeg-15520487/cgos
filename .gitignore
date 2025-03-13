@@ -1,0 +1,5 @@
+*.hdd
+*.iso
+/bin
+/obj
+/iso_root
