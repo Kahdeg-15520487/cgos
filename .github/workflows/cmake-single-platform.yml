@@ -1,6 +1,4 @@
-# This starter workflow is for a CMake project running on a single platform. There is a different starter workflow if you need cross-platform coverage.
-# See: https://github.com/actions/starter-workflows/blob/main/ci/cmake-multi-platform.yml
-name: CMake on a single platform
+name: Build Limine-bootable ISO
 
 on:
   push:
@@ -9,20 +7,53 @@ on:
     branches: [ "master" ]
 
 env:
-  # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
   BUILD_TYPE: Release
 
 jobs:
   build:
-    # The CMake configure and build commands are platform agnostic and should work equally well on Windows or Mac.
-    # You can convert this to a matrix build if you need cross-platform coverage.
-    # See: https://docs.github.com/en/free-pro-team@latest/actions/learn-github-actions/managing-complex-workflows#using-a-build-matrix
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
-    - run:  bash makeiso.sh
-    - uses: actions/upload-artifact@v4
-      with:
-        name: iso
-        path: image.iso
+      # 1. Checkout your code
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        # Clones your repo into $GITHUB_WORKSPACE so later steps can see it :contentReference[oaicite:4]{index=4}
+
+      # 2. Install Limine build prerequisites
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            coreutils make grep sed findutils gawk gzip \
+            nasm mtools xorriso build-essential gcc binutils
+        # Limine needs UNIX tools, an assembler, optional mtools, plus compiler & binutils :contentReference[oaicite:5]{index=5}
+
+      # 3. Download Limine v9.2.3 release tarball
+      - name: Fetch Limine v9.2.3
+        run: |
+          wget -qO- \
+            https://github.com/limine-bootloader/limine/releases/download/v9.2.3/limine-v9.2.3.tar.gz \
+            | tar xz
+        # Use the latest signed binary release to skip the bootstrap step :contentReference[oaicite:6]{index=6}
+
+      # 4. Build & “install” Limine into a local directory
+      - name: Build and install Limine
+        working-directory: limine-v9.2.3
+        run: |
+          ./configure --prefix="${GITHUB_WORKSPACE}/limine-install" \
+                      --enable-bios --enable-uefi
+          make
+          make install
+        # Runs configure / make / make install as per INSTALL.md :contentReference[oaicite:7]{index=7}
+
+      # 5. Build your ISO (your existing script)
+      - name: Build ISO
+        run: bash makeiso.sh
+
+      # 6. Upload the resulting ISO as a workflow artifact
+      - name: Upload ISO artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: limine-os-image
+          path: image.iso
+        # v4 offers improved performance and immutability :contentReference[oaicite:8]{index=8}
