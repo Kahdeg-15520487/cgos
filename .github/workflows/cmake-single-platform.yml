@@ -15,22 +15,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install build dependencies
+      - name: Build Limine-bootable ISO
         run: |
           sudo apt-get update
           sudo apt-get install -y coreutils make grep sed findutils gawk gzip nasm mtools xorriso build-essential gcc binutils
-
-      - name: Fetch Limine 9.2.3 binary
-        run: |
           git clone https://github.com/limine-bootloader/limine.git --branch=v9.2.3-binary --depth=1
-      
-      - name: Install Limine binary
-        working-directory: limine
-        run: |
+          cd limine
           make
-
-      - name: Build ISO
-        run: bash makeiso.sh
+          cd ..
+          bash makeiso.sh
 
       - name: Upload ISO artifact
         uses: actions/upload-artifact@v4
