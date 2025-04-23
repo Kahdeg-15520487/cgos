@@ -24,6 +24,7 @@ jobs:
           make
           cd ..
           cp -r ./limine-bin/* ./src
+          cp -r ./limine-bin/* ./
           chmod +x limine
           ls -al
           bash makeiso.sh
