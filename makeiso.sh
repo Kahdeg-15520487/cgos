@@ -7,13 +7,13 @@ mkdir -p iso_root
 mkdir -p iso_root/boot
 cp -v bin/cgos iso_root/boot/
 mkdir -p iso_root/boot/limine
-cp -v limine.conf limine/limine-bios.sys limine/limine-bios-cd.bin \
-      limine/limine-uefi-cd.bin iso_root/boot/limine/
+cp -v limine.conf limine/limine-bios.sys limine-bin/limine-bios-cd.bin \
+      limine-bin/limine-uefi-cd.bin iso_root/boot/limine/
 
 # Create the EFI boot tree and copy Limine's EFI executables over.
 mkdir -p iso_root/EFI/BOOT
-cp -v limine/BOOTX64.EFI iso_root/EFI/BOOT/
-cp -v limine/BOOTIA32.EFI iso_root/EFI/BOOT/
+cp -v limine-bin/BOOTX64.EFI iso_root/EFI/BOOT/
+cp -v limine-bin/BOOTIA32.EFI iso_root/EFI/BOOT/
 
 # Create the bootable ISO.
 xorriso -as mkisofs -R -r -J -b boot/limine/limine-bios-cd.bin \
