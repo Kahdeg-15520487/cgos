@@ -19,9 +19,10 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y coreutils make grep sed findutils gawk gzip nasm mtools xorriso build-essential gcc binutils
-          git clone https://github.com/limine-bootloader/limine.git --branch=v9.2.3-binary --depth=1
-          cd limine
+          git clone https://github.com/limine-bootloader/limine.git --branch=v9.2.3-binary --depth=1 limine-bin
+          cd limine-bin
           make
+          cp limine ..
           cd ..
           bash makeiso.sh
 
