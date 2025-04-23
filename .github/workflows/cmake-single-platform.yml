@@ -20,13 +20,13 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y coreutils make grep sed findutils gawk gzip nasm mtools xorriso build-essential gcc binutils
 
-      - name: Fetch Limine v9.2.3
+      - name: Fetch Limine 9.2.3
         run: |
           wget -qO- https://github.com/limine-bootloader/limine/releases/download/v9.2.3/limine-9.2.3.tar.gz \
             | tar -xzf -
       
       - name: Build and install Limine
-        working-directory: limine-v9.2.3
+        working-directory: limine-9.2.3
         run: |
           ./configure --prefix="${GITHUB_WORKSPACE}/limine-install" --enable-bios --enable-uefi
           make && make install
