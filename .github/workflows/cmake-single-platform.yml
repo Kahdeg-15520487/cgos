@@ -22,7 +22,7 @@ jobs:
 
       - name: Fetch Limine v9.2.3
         run: |
-          wget -qO- https://github.com/limine-bootloader/limine/releases/download/v9.2.3/limine-v9.2.3.tar.gz \
+          wget -qO- https://github.com/limine-bootloader/limine/releases/download/v9.2.3/limine-9.2.3.tar.gz \
             | tar -xzf -
       
       - name: Build and install Limine
