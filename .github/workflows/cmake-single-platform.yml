@@ -15,15 +15,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set up build environment
+        run: |
+          bash setup.sh
+
       - name: Build Limine-bootable ISO
         run: |
-          sudo apt-get update
-          sudo apt-get install -y coreutils make mtools xorriso
-          git clone https://github.com/limine-bootloader/limine.git --branch=v9.2.3-binary --depth=1 limine-bin
-          cd limine-bin
-          make
-          chmod +x limine
-          cd ..
           bash makeiso.sh
 
       - name: Upload ISO artifact
