@@ -22,11 +22,8 @@ jobs:
           git clone https://github.com/limine-bootloader/limine.git --branch=v9.2.3-binary --depth=1 limine-bin
           cd limine-bin
           make
-          cd ..
-          cp -r ./limine-bin/* ./src
-          cp -r ./limine-bin/* ./
           chmod +x limine
-          ls -al
+          cd ..
           bash makeiso.sh
 
       - name: Upload ISO artifact
