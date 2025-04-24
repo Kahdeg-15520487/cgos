@@ -26,5 +26,5 @@ jobs:
       - name: Upload ISO artifact
         uses: actions/upload-artifact@v4
         with:
-          name: limine-os-image
+          name: cgos-image
           path: image.iso
