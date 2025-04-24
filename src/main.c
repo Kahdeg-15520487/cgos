@@ -4,6 +4,7 @@
 #include <limine.h>
 #include <stdarg.h>
 #include <stdio.h>
+#include "memory.h"
 #include "graphic.h"
 
 // Set the base revision to 3, this is recommended as this is the latest
@@ -38,63 +39,6 @@ static volatile LIMINE_REQUESTS_START_MARKER;
 
 __attribute__((used, section(".limine_requests_end")))
 static volatile LIMINE_REQUESTS_END_MARKER;
-
-// GCC and Clang reserve the right to generate calls to the following
-// 4 functions even if they are not directly called.
-// Implement them as the C specification mandates.
-// DO NOT remove or rename these functions, or stuff will eventually break!
-// They CAN be moved to a different .c file.
-
-void *memcpy(void *dest, const void *src, size_t n) {
-    uint8_t *pdest = (uint8_t *)dest;
-    const uint8_t *psrc = (const uint8_t *)src;
-
-    for (size_t i = 0; i < n; i++) {
-        pdest[i] = psrc[i];
-    }
-
-    return dest;
-}
-
-void *memset(void *s, int c, size_t n) {
-    uint8_t *p = (uint8_t *)s;
-
-    for (size_t i = 0; i < n; i++) {
-        p[i] = (uint8_t)c;
-    }
-
-    return s;
-}
-
-void *memmove(void *dest, const void *src, size_t n) {
-    uint8_t *pdest = (uint8_t *)dest;
-    const uint8_t *psrc = (const uint8_t *)src;
-
-    if (src > dest) {
-        for (size_t i = 0; i < n; i++) {
-            pdest[i] = psrc[i];
-        }
-    } else if (src < dest) {
-        for (size_t i = n; i > 0; i--) {
-            pdest[i-1] = psrc[i-1];
-        }
-    }
-
-    return dest;
-}
-
-int memcmp(const void *s1, const void *s2, size_t n) {
-    const uint8_t *p1 = (const uint8_t *)s1;
-    const uint8_t *p2 = (const uint8_t *)s2;
-
-    for (size_t i = 0; i < n; i++) {
-        if (p1[i] != p2[i]) {
-            return p1[i] < p2[i] ? -1 : 1;
-        }
-    }
-
-    return 0;
-}
 
 // Halt and catch fire function.
 static void hcf(void) {
@@ -167,13 +111,6 @@ void kmain(void) {
     // draw a box around the screen
     draw_rect(0, 0, width, height, 1, 0xf080FF, false);
 
-    draw_line(0,0,width-1,0,5, 0x0080FF);
-    draw_line(0,0,0,height-1,50, 0x0080FF);
-    draw_line(width-1-50,0,width-1-50,height-1,50, 0x0080FF);
-    draw_line(0,height-1-50,width-1,height-1-50,50, 0x0080FF);
-
-    draw_line(0,0,height-1,width-1,50, 0x0080FF);
-
     // draw_line(0,0,width-1,0,1, 0x0080FF);
     // draw_line(0,0,0,height-1,1, 0x0080FF);
     // draw_line(width-1,0,width-1,height-1,1, 0x0080FF);
@@ -190,15 +127,15 @@ void kmain(void) {
     // draw_line(2,height-3,width-3,height-3,1, 0x0080FF);
 
     // Draw a rectangle in the center of the screen
-    draw_rect((width / 2) - 50, (height / 2) - 50, 100, 100,2, 0xFF00FF, false); // Purple filled rectangle
-    draw_rect((width / 2) - 50 - 2, (height / 2) - 50 - 2, 102, 102,2, 0xFFFF00, false); // Yellow unfilled rectangle
-    draw_rect((width / 2) - 50 - 4, (height / 2) - 50 - 4, 104, 104,2, 0x00FFFF, false); // Cyan filled rectangle
+    // draw_rect((width / 2) - 50, (height / 2) - 50, 100, 100,2, 0xFF00FF, false); // Purple filled rectangle
+    // draw_rect((width / 2) - 50 - 2, (height / 2) - 50 - 2, 102, 102,2, 0xFFFF00, false); // Yellow unfilled rectangle
+    // draw_rect((width / 2) - 50 - 4, (height / 2) - 50 - 4, 104, 104,2, 0x00FFFF, false); // Cyan filled rectangle
 
 
-    // Draw a circle in the center of the screen
-    draw_circle(width / 2, height / 2, 47,1, 0xFF0000, false); // Red filled circle
-    draw_circle(width / 2, height / 2, 48,1, 0x00FF00, false); // Green unfilled circle
-    draw_circle(width / 2, height / 2, 49,1, 0x0000FF, false); // Blue filled circle
+    // // Draw a circle in the center of the screen
+    // draw_circle(width / 2, height / 2, 47,1, 0xFF0000, false); // Red filled circle
+    // draw_circle(width / 2, height / 2, 48,1, 0x00FF00, false); // Green unfilled circle
+    // draw_circle(width / 2, height / 2, 49,1, 0x0000FF, false); // Blue filled circle
 
     // Fetch the memory map entries.
     uint64_t mmapentrycount = memmap_request.response->entry_count;
@@ -206,34 +143,36 @@ void kmain(void) {
     for (uint64_t i = 0; i < mmapentrycount; i++) {
         struct limine_memmap_entry *entry = memmap_request.response->entries[i];
         if (entry->type != LIMINE_MEMMAP_USABLE) {
-            continue; // Skip non-usable memory entries
+            // continue; // Skip non-usable memory entries
         }
         entryindex++;
+        int sizeKB = entry->length / 1024; // Convert length to KB
+        int sizeMB = sizeKB / 1024; // Convert length to MB
         // Print the memory map entry information.
         switch (entry->type) {
         case LIMINE_MEMMAP_USABLE:
-            kprintf(10, 110 + (entryindex * 15), "Entry %d: Usable Memory: Base: %lx, Length: %lx", i, entry->base, entry->length);
+            kprintf(10, 110 + (i * 15), "Entry %d: Usable Memory: Base: %lx, Length: %d KB, %d MB", i, entry->base, sizeKB, sizeMB);
             break;
         case LIMINE_MEMMAP_RESERVED:
-            kprintf(10, 110 + (i * 15), "Entry %d: Reserved Memory: Base: %lx, Length: %lx", i, entry->base, entry->length);
+            kprintf(10, 110 + (i * 15), "Entry %d: Reserved Memory: Base: %lx, Length: %d KB, %d MB", i, entry->base, sizeKB, sizeMB);
             break;
         case LIMINE_MEMMAP_ACPI_RECLAIMABLE:
-            kprintf(10, 110 + (i * 15), "Entry %d: ACPI Reclaimable Memory: Base: %lx, Length: %lx", i, entry->base, entry->length);
+            kprintf(10, 110 + (i * 15), "Entry %d: ACPI Reclaimable Memory: Base: %lx, Length: %d KB, %d MB", i, entry->base, sizeKB, sizeMB);
             break;
         case LIMINE_MEMMAP_ACPI_NVS:
-            kprintf(10, 110 + (i * 15), "Entry %d: ACPI NVS Memory: Base: %lx, Length: %lx", i, entry->base, entry->length);
+            kprintf(10, 110 + (i * 15), "Entry %d: ACPI NVS Memory: Base: %lx, Length: %d KB, %d MB", i, entry->base, sizeKB, sizeMB);
             break;
         case LIMINE_MEMMAP_BAD_MEMORY:
-            kprintf(10, 110 + (i * 15), "Entry %d: Bad Memory: Base: %lx, Length: %lx", i, entry->base, entry->length);
+            kprintf(10, 110 + (i * 15), "Entry %d: Bad Memory: Base: %lx, Length: %d KB, %d MB", i, entry->base, sizeKB, sizeMB);
             break;
         case LIMINE_MEMMAP_BOOTLOADER_RECLAIMABLE:
-            kprintf(10, 110 + (i * 15), "Entry %d: Bootloader Reclaimable Memory: Base: %lx, Length: %lx", i, entry->base, entry->length);
+            kprintf(10, 110 + (i * 15), "Entry %d: Bootloader Reclaimable Memory: Base: %lx, Length: %d KB, %d MB", i, entry->base, sizeKB, sizeMB);
             break;
         case LIMINE_MEMMAP_EXECUTABLE_AND_MODULES:
-            kprintf(10, 110 + (i * 15), "Entry %d: Kernel and Modules Memory: Base: %lx, Length: %lx", i, entry->base, entry->length);
+            kprintf(10, 110 + (i * 15), "Entry %d: Kernel and Modules Memory: Base: %lx, Length: %d KB, %d MB", i, entry->base, sizeKB, sizeMB);
             break;
         case LIMINE_MEMMAP_FRAMEBUFFER:
-            kprintf(10, 110 + (i * 15), "Entry %d: Framebuffer Memory: Base: %lx, Length: %lx", i, entry->base, entry->length);
+            kprintf(10, 110 + (i * 15), "Entry %d: Framebuffer Memory: Base: %lx, Length: %d KB, %d MB", i, entry->base, sizeKB, sizeMB);
             break;
         
         default:
