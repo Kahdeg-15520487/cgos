@@ -1,5 +1,8 @@
 name: Build Limine-bootable ISO
 
+permissions:
+  contents: write
+
 on:
   push:
     branches: [ "master" ]
