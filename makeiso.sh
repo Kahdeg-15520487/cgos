@@ -20,10 +20,10 @@ xorriso -as mkisofs -R -r -J -b boot/limine/limine-bios-cd.bin \
         -no-emul-boot -boot-load-size 4 -boot-info-table -hfsplus \
         -apm-block-size 2048 --efi-boot boot/limine/limine-uefi-cd.bin \
         -efi-boot-part --efi-boot-image --protective-msdos-label \
-        iso_root -o image.iso
+        iso_root -o cgos.iso
 
 # Install Limine stage 1 and 2 for legacy BIOS boot.
-./limine-bin/limine bios-install image.iso
+./limine-bin/limine bios-install cgos.iso
 
 # # Create an empty zeroed-out 64MiB image file.
 # dd if=/dev/zero bs=1M count=0 seek=64 of=image.hdd
