@@ -20,14 +20,20 @@ void *memcpy(void *dest, const void *src, size_t n) {
     return dest;
 }
 
-void *memset(void *s, int c, size_t n) {
-    uint8_t *p = (uint8_t *)s;
+void *memset(void *dest, int value, size_t count)
+{
+	uint8_t val = (uint8_t)(value & 0xFF);
+	uint8_t *dest2 = (uint8_t*)(dest);
 
-    for (size_t i = 0; i < n; i++) {
-        p[i] = (uint8_t)c;
-    }
+	size_t i = 0;
 
-    return s;
+	while(i < count)
+	{
+		dest2[i] = val;
+		i++;
+	}
+
+	return dest;
 }
 
 void *memmove(void *dest, const void *src, size_t n) {

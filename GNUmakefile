@@ -93,6 +93,8 @@ all: bin/$(OUTPUT)
 bin/$(OUTPUT): GNUmakefile linker.ld $(OBJ)
 	mkdir -p "$$(dirname $@)"
 	$(CC) $(CFLAGS) $(LDFLAGS) $(OBJ) -o $@
+	objcopy --only-keep-debug $@ $@.sym
+	objcopy --strip-debug $@
 
 # Compilation rules for *.c files.
 obj/%.c.o: src/%.c GNUmakefile
