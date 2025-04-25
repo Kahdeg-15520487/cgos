@@ -51,6 +51,7 @@ override CFLAGS += \
 # Internal C preprocessor flags that should not be changed by the user.
 override CPPFLAGS := \
     -I src \
+    -I src/memory \
     -I src/graphic \
     -I limine-bin \
     $(CPPFLAGS) \
@@ -92,6 +93,8 @@ all: bin/$(OUTPUT)
 bin/$(OUTPUT): GNUmakefile linker.ld $(OBJ)
 	mkdir -p "$$(dirname $@)"
 	$(CC) $(CFLAGS) $(LDFLAGS) $(OBJ) -o $@
+	objcopy --only-keep-debug $@ $@.sym
+	objcopy --strip-debug $@
 
 # Compilation rules for *.c files.
 obj/%.c.o: src/%.c GNUmakefile

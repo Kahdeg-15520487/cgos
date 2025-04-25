@@ -7,7 +7,7 @@ mkdir -p iso_root
 mkdir -p iso_root/boot
 cp -v bin/cgos iso_root/boot/
 mkdir -p iso_root/boot/limine
-cp -v limine.conf limine/limine-bios.sys limine-bin/limine-bios-cd.bin \
+cp -v limine.conf limine-bin/limine-bios.sys limine-bin/limine-bios-cd.bin \
       limine-bin/limine-uefi-cd.bin iso_root/boot/limine/
 
 # Create the EFI boot tree and copy Limine's EFI executables over.
@@ -20,10 +20,10 @@ xorriso -as mkisofs -R -r -J -b boot/limine/limine-bios-cd.bin \
         -no-emul-boot -boot-load-size 4 -boot-info-table -hfsplus \
         -apm-block-size 2048 --efi-boot boot/limine/limine-uefi-cd.bin \
         -efi-boot-part --efi-boot-image --protective-msdos-label \
-        iso_root -o image.iso
+        iso_root -o cgos.iso
 
 # Install Limine stage 1 and 2 for legacy BIOS boot.
-./limine-bin/limine bios-install image.iso
+./limine-bin/limine bios-install cgos.iso
 
 # # Create an empty zeroed-out 64MiB image file.
 # dd if=/dev/zero bs=1M count=0 seek=64 of=image.hdd
