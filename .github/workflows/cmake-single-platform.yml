@@ -24,11 +24,11 @@ jobs:
       - name: Build Limine-bootable ISO
         run: |
           bash makeiso.sh
-      # - name: Upload ISO artifact
-      #   uses: actions/upload-artifact@v4
-      #   with:
-      #     name: cgos-image
-      #     path: image.iso
+      - name: Upload ISO artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cgos-image
+          path: cgos.iso
       - name: Release
         uses: softprops/action-gh-release@v2
         if: github.ref_type == 'tag'
