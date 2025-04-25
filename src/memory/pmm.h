@@ -32,4 +32,7 @@ bool physical_reserve_region(uintptr_t base, size_t size);
 // Debug function to print memory statistics
 void physical_print_stats(void);
 
+// Add this function prototype to pmm.h
+void draw_memory_bitmap(size_t x, size_t y, size_t width, size_t height);
+
 #endif // PHYSICAL_MEM_H

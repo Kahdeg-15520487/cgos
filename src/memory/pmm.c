@@ -161,3 +161,45 @@ void physical_print_stats(void) {
     kprintf(10, 460, "Managed blocks: %d", phys_mem.total_blocks);
     kprintf(10, 475, "Free blocks: %d", bitmap_get_free_blocks(&phys_mem));
 }
+
+void draw_memory_bitmap(size_t x, size_t y, size_t width, size_t height) {
+    if (!phys_mem.bitmap) return;
+    
+    size_t bitmap_size = phys_mem.total_blocks;
+    size_t pixels_per_bit = (width * height) / bitmap_size;
+    if (pixels_per_bit < 1) pixels_per_bit = 1;
+    
+    size_t bits_per_row = width / pixels_per_bit;
+    if (bits_per_row == 0) bits_per_row = 1;
+    
+    size_t rows = (bitmap_size + bits_per_row - 1) / bits_per_row;
+    if (rows > height / pixels_per_bit) rows = height / pixels_per_bit;
+    
+    for (size_t i = 0; i < bitmap_size && i < bits_per_row * rows; i++) {
+        size_t row = i / bits_per_row;
+        size_t col = i % bits_per_row;
+        
+        // Calculate pixel position
+        size_t px = x + col * pixels_per_bit;
+        size_t py = y + row * pixels_per_bit;
+        
+        // Check if the bit is set (page is used)
+        bool is_used = bitmap_test_bit(phys_mem.bitmap, i);
+        
+        // Choose color: green for free, red for used
+        uint32_t color = is_used ? 0xFF0000 : 0x00FF00;
+        
+        // Draw a small rectangle for each bit
+        draw_rect(px, py, pixels_per_bit, pixels_per_bit, 1, color, true);
+    }
+    
+    // Draw a border around the bitmap
+    draw_rect(x - 1, y - 1, width + 2, height + 2, 1, 0xFFFFFF, false);
+    
+    // Draw a legend
+    draw_rect(x, y + height + 5, 10, 10, 1, 0x00FF00, true);
+    draw_string(x + 15, y + height + 5, "Free", 0xFFFFFF);
+    
+    draw_rect(x, y + height + 20, 10, 10, 1, 0xFF0000, true);
+    draw_string(x + 15, y + height + 20, "Used", 0xFFFFFF);
+}

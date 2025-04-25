@@ -92,28 +92,31 @@ void kmain(void) {
     
     // Initialize physical memory manager
     if (physical_memory_init(memmap_request.response)) {
-        kprintf(10, 320, "Physical memory manager initialized successfully");
+        kprintf(10, 110, "Physical memory manager initialized successfully");
         
         // Test physical memory allocation
         void *page1 = physical_alloc_page();
         void *page2 = physical_alloc_page();
         void *pages = physical_alloc_pages(4);
         
-        kprintf(10, 335, "Allocated page 1 at: %p", page1);
-        kprintf(10, 350, "Allocated page 2 at: %p", page2);
-        kprintf(10, 365, "Allocated 4 contiguous pages at: %p", pages);
+        kprintf(10, 125, "Allocated page 1 at: %p", page1);
+        kprintf(10, 140, "Allocated page 2 at: %p", page2);
+        kprintf(10, 155, "Allocated 4 contiguous pages at: %p", pages);
+        
+        // Print memory statistics
+        physical_print_stats();
+        // Draw the memory bitmap visualization
+        kprintf(10, 185, "Memory Bitmap Visualization:");
+        draw_memory_bitmap(10, 425, 600, 150);
         
         // Free the pages
         physical_free_page(page1);
         physical_free_page(page2);
         physical_free_pages(pages, 4);
         
-        kprintf(10, 380, "Freed all allocated pages");
-        
-        // Print memory statistics
-        physical_print_stats();
+        kprintf(10, 170, "Freed all allocated pages");
 
-        
+
     } else {
         kprintf(10, 320, "Failed to initialize physical memory manager");
     }

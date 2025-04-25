@@ -6,6 +6,11 @@
 #define BITMAP_CLEAR_BIT(bitmap, bit) ((bitmap)[(bit) / 8] &= ~(1 << ((bit) % 8)))
 #define BITMAP_TEST_BIT(bitmap, bit) ((bitmap)[(bit) / 8] & (1 << ((bit) % 8)))
 
+// Helper function that uses the existing macro
+bool bitmap_test_bit(uint8_t *bitmap, size_t bit) {
+    return BITMAP_TEST_BIT(bitmap, bit) != 0;
+}
+
 bool bitmap_init(bitmap_memory_manager_t* manager, void* bitmap_storage, 
                  uintptr_t memory_base, size_t memory_size) {
     if (!manager || !bitmap_storage || memory_size == 0) {

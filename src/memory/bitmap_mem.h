@@ -44,4 +44,7 @@ bool bitmap_contains_address(bitmap_memory_manager_t* manager, void* address);
 size_t bitmap_address_to_block(bitmap_memory_manager_t* manager, void* address);
 void* bitmap_block_to_address(bitmap_memory_manager_t* manager, size_t block);
 
+// Add this to bitmap_mem.h if needed
+bool bitmap_test_bit(uint8_t *bitmap, size_t bit);
+
 #endif // BITMAP_MEM_H
