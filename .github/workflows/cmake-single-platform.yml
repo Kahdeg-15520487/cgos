@@ -14,17 +14,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - name: Set up build environment
         run: |
           bash setup.sh
-
       - name: Build Limine-bootable ISO
         run: |
           bash makeiso.sh
-
       - name: Upload ISO artifact
         uses: actions/upload-artifact@v4
         with:
           name: cgos-image
           path: image.iso
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: image.iso
