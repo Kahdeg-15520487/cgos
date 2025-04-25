@@ -104,10 +104,10 @@ void kmain(void) {
         kprintf(10, 155, "Allocated 4 contiguous pages at: %p", pages);
         
         // Print memory statistics
-        physical_print_stats();
+        physical_print_stats(10, 170);
         // Draw the memory bitmap visualization
-        kprintf(10, 185, "Memory Bitmap Visualization:");
-        draw_memory_bitmap(10, 425, 600, 150);
+        kprintf(10, 265, "Memory Bitmap Visualization:");
+        draw_memory_bitmap(10, 280, 600, 150);
         
         // Free the pages
         physical_free_page(page1);

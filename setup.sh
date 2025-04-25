@@ -13,4 +13,3 @@ cd limine-bin
 make
 chmod +x limine
 cd ..
-bash makeiso.sh
