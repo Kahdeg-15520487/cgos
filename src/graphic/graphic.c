@@ -200,6 +200,20 @@ static int vsprintf(char *str, const char *format, va_list args) {
                     }
                     break;
                 }
+                case 'p': {
+                    void *value = va_arg(args, void *);
+                    // Print '0x' prefix for pointer values
+                    *s++ = '0';
+                    *s++ = 'x';
+                    char buffer[32] = {0}; // Clear buffer
+                    // Convert pointer to unsigned long for proper hex representation
+                    itoa((unsigned long)value, buffer, 16);
+                    char *buf_ptr = buffer;
+                    while (*buf_ptr) {
+                        *s++ = *buf_ptr++;
+                    }
+                    break;
+                }
                 case 's': {
                     char *value = va_arg(args, char *);
                     while (*value) {

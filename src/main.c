@@ -5,6 +5,7 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include "memory.h"
+#include "pmm.h"
 #include "graphic.h"
 
 // Set the base revision to 3, this is recommended as this is the latest
@@ -88,6 +89,34 @@ void kmain(void) {
     size_t height = framebuffer->height;
 
     clear_screen(0x6495ed); // Clear the screen with cornflower blue color
+    
+    // Initialize physical memory manager
+    if (physical_memory_init(memmap_request.response)) {
+        kprintf(10, 320, "Physical memory manager initialized successfully");
+        
+        // Test physical memory allocation
+        void *page1 = physical_alloc_page();
+        void *page2 = physical_alloc_page();
+        void *pages = physical_alloc_pages(4);
+        
+        kprintf(10, 335, "Allocated page 1 at: %p", page1);
+        kprintf(10, 350, "Allocated page 2 at: %p", page2);
+        kprintf(10, 365, "Allocated 4 contiguous pages at: %p", pages);
+        
+        // Free the pages
+        physical_free_page(page1);
+        physical_free_page(page2);
+        physical_free_pages(pages, 4);
+        
+        kprintf(10, 380, "Freed all allocated pages");
+        
+        // Print memory statistics
+        physical_print_stats();
+
+        
+    } else {
+        kprintf(10, 320, "Failed to initialize physical memory manager");
+    }
 
     // draw random color lines
     for (size_t i = 0; i < 100; i++) {
@@ -138,47 +167,47 @@ void kmain(void) {
     // draw_circle(width / 2, height / 2, 49,1, 0x0000FF, false); // Blue filled circle
 
     // Fetch the memory map entries.
-    uint64_t mmapentrycount = memmap_request.response->entry_count;
-    uint64_t entryindex = 0;
-    for (uint64_t i = 0; i < mmapentrycount; i++) {
-        struct limine_memmap_entry *entry = memmap_request.response->entries[i];
-        if (entry->type != LIMINE_MEMMAP_USABLE) {
-            // continue; // Skip non-usable memory entries
-        }
-        entryindex++;
-        int sizeKB = entry->length / 1024; // Convert length to KB
-        int sizeMB = sizeKB / 1024; // Convert length to MB
-        // Print the memory map entry information.
-        switch (entry->type) {
-        case LIMINE_MEMMAP_USABLE:
-            kprintf(10, 110 + (i * 15), "Entry %d: Usable Memory: Base: %lx, Length: %d KB, %d MB", i, entry->base, sizeKB, sizeMB);
-            break;
-        case LIMINE_MEMMAP_RESERVED:
-            kprintf(10, 110 + (i * 15), "Entry %d: Reserved Memory: Base: %lx, Length: %d KB, %d MB", i, entry->base, sizeKB, sizeMB);
-            break;
-        case LIMINE_MEMMAP_ACPI_RECLAIMABLE:
-            kprintf(10, 110 + (i * 15), "Entry %d: ACPI Reclaimable Memory: Base: %lx, Length: %d KB, %d MB", i, entry->base, sizeKB, sizeMB);
-            break;
-        case LIMINE_MEMMAP_ACPI_NVS:
-            kprintf(10, 110 + (i * 15), "Entry %d: ACPI NVS Memory: Base: %lx, Length: %d KB, %d MB", i, entry->base, sizeKB, sizeMB);
-            break;
-        case LIMINE_MEMMAP_BAD_MEMORY:
-            kprintf(10, 110 + (i * 15), "Entry %d: Bad Memory: Base: %lx, Length: %d KB, %d MB", i, entry->base, sizeKB, sizeMB);
-            break;
-        case LIMINE_MEMMAP_BOOTLOADER_RECLAIMABLE:
-            kprintf(10, 110 + (i * 15), "Entry %d: Bootloader Reclaimable Memory: Base: %lx, Length: %d KB, %d MB", i, entry->base, sizeKB, sizeMB);
-            break;
-        case LIMINE_MEMMAP_EXECUTABLE_AND_MODULES:
-            kprintf(10, 110 + (i * 15), "Entry %d: Kernel and Modules Memory: Base: %lx, Length: %d KB, %d MB", i, entry->base, sizeKB, sizeMB);
-            break;
-        case LIMINE_MEMMAP_FRAMEBUFFER:
-            kprintf(10, 110 + (i * 15), "Entry %d: Framebuffer Memory: Base: %lx, Length: %d KB, %d MB", i, entry->base, sizeKB, sizeMB);
-            break;
+    // uint64_t mmapentrycount = memmap_request.response->entry_count;
+    // uint64_t entryindex = 0;
+    // for (uint64_t i = 0; i < mmapentrycount; i++) {
+    //     struct limine_memmap_entry *entry = memmap_request.response->entries[i];
+    //     if (entry->type != LIMINE_MEMMAP_USABLE) {
+    //         // continue; // Skip non-usable memory entries
+    //     }
+    //     entryindex++;
+    //     int sizeKB = entry->length / 1024; // Convert length to KB
+    //     int sizeMB = sizeKB / 1024; // Convert length to MB
+    //     // Print the memory map entry information.
+    //     switch (entry->type) {
+    //     case LIMINE_MEMMAP_USABLE:
+    //         kprintf(10, 110 + (i * 15), "Entry %d: Usable Memory: Base: %lx, Length: %d KB, %d MB", i, entry->base, sizeKB, sizeMB);
+    //         break;
+    //     case LIMINE_MEMMAP_RESERVED:
+    //         kprintf(10, 110 + (i * 15), "Entry %d: Reserved Memory: Base: %lx, Length: %d KB, %d MB", i, entry->base, sizeKB, sizeMB);
+    //         break;
+    //     case LIMINE_MEMMAP_ACPI_RECLAIMABLE:
+    //         kprintf(10, 110 + (i * 15), "Entry %d: ACPI Reclaimable Memory: Base: %lx, Length: %d KB, %d MB", i, entry->base, sizeKB, sizeMB);
+    //         break;
+    //     case LIMINE_MEMMAP_ACPI_NVS:
+    //         kprintf(10, 110 + (i * 15), "Entry %d: ACPI NVS Memory: Base: %lx, Length: %d KB, %d MB", i, entry->base, sizeKB, sizeMB);
+    //         break;
+    //     case LIMINE_MEMMAP_BAD_MEMORY:
+    //         kprintf(10, 110 + (i * 15), "Entry %d: Bad Memory: Base: %lx, Length: %d KB, %d MB", i, entry->base, sizeKB, sizeMB);
+    //         break;
+    //     case LIMINE_MEMMAP_BOOTLOADER_RECLAIMABLE:
+    //         kprintf(10, 110 + (i * 15), "Entry %d: Bootloader Reclaimable Memory: Base: %lx, Length: %d KB, %d MB", i, entry->base, sizeKB, sizeMB);
+    //         break;
+    //     case LIMINE_MEMMAP_EXECUTABLE_AND_MODULES:
+    //         kprintf(10, 110 + (i * 15), "Entry %d: Kernel and Modules Memory: Base: %lx, Length: %d KB, %d MB", i, entry->base, sizeKB, sizeMB);
+    //         break;
+    //     case LIMINE_MEMMAP_FRAMEBUFFER:
+    //         kprintf(10, 110 + (i * 15), "Entry %d: Framebuffer Memory: Base: %lx, Length: %d KB, %d MB", i, entry->base, sizeKB, sizeMB);
+    //         break;
         
-        default:
-            break;
-        }
-    }
+    //     default:
+    //         break;
+    //     }
+    // }
 
     // We're done, just hang...
     hcf();
