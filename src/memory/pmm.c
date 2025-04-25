@@ -149,17 +149,17 @@ size_t physical_get_free_memory(void) {
     return bitmap_get_free_blocks(&phys_mem) * BITMAP_BLOCK_SIZE;
 }
 
-void physical_print_stats(void) {
+void physical_print_stats(size_t x, size_t y) {
     size_t total_kb = total_memory / 1024;
     size_t used_kb = (used_memory + reserved_memory) / 1024;
     size_t free_kb = physical_get_free_memory() / 1024;
     
-    kprintf(10, 400, "Memory Stats:");
-    kprintf(10, 415, "Total: %d KB (%d MB)", total_kb, total_kb / 1024);
-    kprintf(10, 430, "Used: %d KB (%d MB)", used_kb, used_kb / 1024);
-    kprintf(10, 445, "Free: %d KB (%d MB)", free_kb, free_kb / 1024);
-    kprintf(10, 460, "Managed blocks: %d", phys_mem.total_blocks);
-    kprintf(10, 475, "Free blocks: %d", bitmap_get_free_blocks(&phys_mem));
+    kprintf(x, y, "Memory Stats:");
+    kprintf(x, y+=15, "Total: %d KB (%d MB)", total_kb, total_kb / 1024);
+    kprintf(x, y+=15, "Used: %d KB (%d MB)", used_kb, used_kb / 1024);
+    kprintf(x, y+=15, "Free: %d KB (%d MB)", free_kb, free_kb / 1024);
+    kprintf(x, y+=15, "Managed blocks: %d", phys_mem.total_blocks);
+    kprintf(x, y+=15, "Free blocks: %d", bitmap_get_free_blocks(&phys_mem));
 }
 
 void draw_memory_bitmap(size_t x, size_t y, size_t width, size_t height) {
