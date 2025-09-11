@@ -207,4 +207,64 @@ int loopback_init(void) {
                           );
 }
 
+// Ethernet interface operations for demo
+static int ethernet_send(network_interface_t *iface, void *data, size_t len) {
+    (void)iface; // Avoid unused parameter warning
+    (void)data;
+    (void)len;
+    
+    // In a real implementation, this would send data to actual ethernet hardware
+    // For now, just simulate success
+    return 0;
+}
+
+static int ethernet_receive(network_interface_t *iface, void *buffer, size_t max_len) {
+    (void)iface; // Avoid unused parameter warning
+    (void)buffer;
+    (void)max_len;
+    
+    // In a real implementation, this would receive data from ethernet hardware
+    // For now, just return no data available
+    return 0;
+}
+
+static int ethernet_start(network_interface_t *iface) {
+    (void)iface; // Avoid unused parameter warning
+    
+    // Start ethernet interface
+    return 0;
+}
+
+static int ethernet_stop(network_interface_t *iface) {
+    (void)iface; // Avoid unused parameter warning
+    
+    // Stop ethernet interface
+    return 0;
+}
+
+static int ethernet_init_dev(network_interface_t *iface) {
+    (void)iface; // Avoid unused parameter warning
+    
+    // Initialize ethernet device
+    return 0;
+}
+
+static netdev_ops_t ethernet_ops = {
+    .send = ethernet_send,
+    .receive = ethernet_receive,
+    .start = ethernet_start,
+    .stop = ethernet_stop,
+    .init = ethernet_init_dev
+};
+
+// Create a simulated ethernet interface for DHCP demo
+int ethernet_init(void) {
+    uint8_t ethernet_mac[6] = {0x02, 0x00, 0x00, 0x12, 0x34, 0x56}; // Locally administered MAC
+    return netdev_register("eth0", &ethernet_ops, ethernet_mac,
+                          0x00000000, // 0.0.0.0 (will be set by DHCP)
+                          0x00000000, // 0.0.0.0 (will be set by DHCP)
+                          0x00000000  // 0.0.0.0 (will be set by DHCP)
+                          );
+}
+
 

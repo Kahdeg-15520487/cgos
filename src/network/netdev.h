@@ -25,4 +25,7 @@ void netdev_list(void);
 // Loopback driver
 int loopback_init(void);
 
+// Ethernet driver (simulated for DHCP demo)
+int ethernet_init(void);
+
 #endif // NETDEV_H

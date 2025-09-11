@@ -9,6 +9,7 @@
 #include "graphic.h"
 #include "network/network.h"
 #include "network/socket.h"
+#include "network/dhcp.h"
 
 // Set the base revision to 3, this is recommended as this is the latest
 // base revision described by the Limine boot protocol specification.
@@ -116,7 +117,7 @@ void kmain(void) {
         physical_free_page(page2);
         physical_free_pages(pages, 4);
         
-        kprintf(10, 170, "Freed all allocated pages");
+        kprintf(130, 170, "Freed all allocated pages");
 
 
     } else {
@@ -215,62 +216,80 @@ void kmain(void) {
     // }
 
     // Initialize and demo the network stack
-    kprintf(10, 450, "=== Network Stack Demo ===");
+    kprintf(10, 465, "=== Network Stack Demo ===");
     
     // Initialize the network stack
     if (network_init() == 0) {
-        kprintf(10, 465, "Network stack initialized successfully");
+        kprintf(10, 480, "Network stack initialized successfully");
         
-        // Demo 1: Create and bind a UDP socket
-        int udp_sock = socket_create(AF_INET, SOCK_DGRAM, 0);
-        if (udp_sock >= 0) {
-            kprintf(10, 480, "Created UDP socket: %d", udp_sock);
+        // Real Network Demo - Attempt actual DHCP
+        network_interface_t *eth_iface = network_get_interface(1); // eth0 interface
+        if (eth_iface) {
+            kprintf(10, 495, "Found ethernet interface: %s", eth_iface->name);
+            kprintf(10, 510, "MAC Address: %02x:%02x:%02x:%02x:%02x:%02x", 
+                   eth_iface->mac_address[0], eth_iface->mac_address[1], 
+                   eth_iface->mac_address[2], eth_iface->mac_address[3],
+                   eth_iface->mac_address[4], eth_iface->mac_address[5]);
             
-            // Bind to port 8080
-            sockaddr_in_t addr;
-            addr.sin_family = AF_INET;
-            addr.sin_port = htons(8080);
-            addr.sin_addr = htonl(0x7F000001); // 127.0.0.1
-            
-            if (socket_bind(udp_sock, (sockaddr_t*)&addr, sizeof(addr)) == 0) {
-                kprintf(10, 495, "UDP socket bound to 127.0.0.1:8080");
+            // Initialize DHCP client for real network communication
+            if (dhcp_client_init(eth_iface) == 0) {
+                dhcp_client_t *dhcp_client = dhcp_get_client(eth_iface);
+                
+                if (dhcp_client) {
+                    kprintf(10, 525, "DHCP client initialized");
+                    kprintf(10, 540, "Sending DHCP DISCOVER to network...");
+                    
+                    // Start real DHCP process (would send actual packets)
+                    if (dhcp_client_start(dhcp_client) == 0) {
+                        kprintf(10, 555, "DHCP DISCOVER packet prepared");
+                        kprintf(10, 570, "Waiting for DHCP OFFER from server...");
+                        kprintf(10, 585, "Note: Real DHCP requires hardware driver");
+                        kprintf(10, 600, "Current implementation: software simulation only");
+                        
+                        // Show current interface status
+                        if (eth_iface->ip_address == 0) {
+                            kprintf(10, 615, "Interface status: No IP address assigned");
+                            kprintf(10, 630, "IP: 0.0.0.0 (unconfigured)");
+                        } else {
+                            kprintf(10, 615, "Interface status: IP address configured");
+                            kprintf(10, 630, "IP: %d.%d.%d.%d", 
+                                   (eth_iface->ip_address >> 24) & 0xFF,
+                                   (eth_iface->ip_address >> 16) & 0xFF,
+                                   (eth_iface->ip_address >> 8) & 0xFF,
+                                   eth_iface->ip_address & 0xFF);
+                        }
+                        
+                        kprintf(10, 645, "DHCP client ready for real network packets");
+                    } else {
+                        kprintf(10, 555, "Failed to start DHCP client");
+                    }
+                } else {
+                    kprintf(10, 525, "Failed to get DHCP client instance");
+                }
             } else {
-                kprintf(10, 495, "Failed to bind UDP socket");
+                kprintf(10, 525, "Failed to initialize DHCP client");
+            }
+        } else {
+            kprintf(10, 495, "No ethernet interface found");
+            
+            // Show loopback interface instead
+            network_interface_t *lo_iface = network_get_interface(0); // loopback
+            if (lo_iface) {
+                kprintf(10, 510, "Using loopback interface: %s", lo_iface->name);
+                kprintf(10, 525, "IP: %d.%d.%d.%d", 
+                       (lo_iface->ip_address >> 24) & 0xFF,
+                       (lo_iface->ip_address >> 16) & 0xFF,
+                       (lo_iface->ip_address >> 8) & 0xFF,
+                       lo_iface->ip_address & 0xFF);
+                kprintf(10, 540, "Status: Active (software-only)");
+            } else {
+                kprintf(10, 510, "No network interfaces available");
             }
         }
         
-        // Demo 2: Create a TCP socket
-        int tcp_sock = socket_create(AF_INET, SOCK_STREAM, 0);
-        if (tcp_sock >= 0) {
-            kprintf(10, 510, "Created TCP socket: %d", tcp_sock);
-            
-            sockaddr_in_t tcp_addr;
-            tcp_addr.sin_family = AF_INET;
-            tcp_addr.sin_port = htons(80);
-            tcp_addr.sin_addr = htonl(0xC0A80164); // 192.168.1.100
-            
-            if (socket_bind(tcp_sock, (sockaddr_t*)&tcp_addr, sizeof(tcp_addr)) == 0) {
-                kprintf(10, 525, "TCP socket bound to 192.168.1.100:80");
-            }
-        }
-        
-        // Demo 3: Show ARP table (initially empty)
-        kprintf(10, 540, "ARP table initialized (empty)");
-        
-        // Demo 4: Show network interface info
-        kprintf(10, 555, "Network interface: lo0 (loopback)");
-        kprintf(10, 570, "IP: 127.0.0.1, MTU: 1500");
-        
-        // Demo 5: Simulate packet processing
-        kprintf(10, 585, "Network stack ready for packet processing");
-        
-        // Clean up sockets
-        if (udp_sock >= 0) socket_close(udp_sock);
-        if (tcp_sock >= 0) socket_close(tcp_sock);
-        
-        kprintf(10, 600, "Network demo completed successfully");
+        kprintf(10, 675, "Network initialization completed");
     } else {
-        kprintf(10, 465, "Failed to initialize network stack");
+        kprintf(10, 480, "Failed to initialize network stack");
     }
 
     // We're done, just hang...

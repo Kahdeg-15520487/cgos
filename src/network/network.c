@@ -5,6 +5,7 @@
 #include "udp.h"
 #include "tcp.h"
 #include "icmp.h"
+#include "netdev.h"
 #include "../memory/memory.h"
 #include "../graphic/graphic.h"
 
@@ -37,6 +38,16 @@ int network_init(void) {
     
     if (icmp_init() != NET_SUCCESS) {
         return NET_ERROR;
+    }
+
+    // Initialize network devices
+    if (loopback_init() != NET_SUCCESS) {
+        return NET_ERROR;
+    }
+    
+    // Initialize ethernet interface for DHCP demo
+    if (ethernet_init() != NET_SUCCESS) {
+        // Don't fail if ethernet init fails, just continue with loopback
     }
 
     return NET_SUCCESS;
