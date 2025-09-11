@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include "memory.h"
 #include "pmm.h"
+#include "memory/vmm.h"
 #include "graphic.h"
 #include "pci/pci.h"
 #include "network/network.h"
@@ -102,31 +103,43 @@ void kmain(void) {
     if (physical_memory_init(memmap_request.response)) {
         kprintf(10, 110, "Physical memory manager initialized successfully");
         
+        // Initialize virtual memory manager
+        kprintf(10, 125, "Initializing virtual memory manager...");
+        DEBUG_INFO("Starting virtual memory manager initialization\n");
+        if (vmm_init() == 0) {
+            kprintf(10, 140, "Virtual memory manager initialized successfully");
+            DEBUG_INFO("Virtual memory manager initialization completed\n");
+        } else {
+            kprintf(10, 140, "ERROR: Failed to initialize virtual memory manager");
+            DEBUG_ERROR("Virtual memory manager initialization failed\n");
+            hcf();
+        }
+        
         // Test physical memory allocation
         void *page1 = physical_alloc_page();
         void *page2 = physical_alloc_page();
         void *pages = physical_alloc_pages(4);
         
-        kprintf(10, 125, "Allocated page 1 at: %p", page1);
-        kprintf(10, 140, "Allocated page 2 at: %p", page2);
-        kprintf(10, 155, "Allocated 4 contiguous pages at: %p", pages);
+        kprintf(10, 155, "Allocated page 1 at: %p", page1);
+        kprintf(10, 170, "Allocated page 2 at: %p", page2);
+        kprintf(10, 185, "Allocated 4 contiguous pages at: %p", pages);
         
         // Print memory statistics
-        physical_print_stats(10, 170);
+        physical_print_stats(10, 200);
         // Draw the memory bitmap visualization
-        kprintf(10, 265, "Memory Bitmap Visualization:");
-        draw_memory_bitmap(10, 280, 600, 150);
+        kprintf(10, 295, "Memory Bitmap Visualization:");
+        draw_memory_bitmap(10, 310, 600, 150);
         
         // Free the pages
         physical_free_page(page1);
         physical_free_page(page2);
         physical_free_pages(pages, 4);
         
-        kprintf(130, 170, "Freed all allocated pages");
+        kprintf(130, 200, "Freed all allocated pages");
 
 
     } else {
-        kprintf(10, 320, "Failed to initialize physical memory manager");
+        kprintf(10, 350, "Failed to initialize physical memory manager");
     }
 
     // draw random color lines
@@ -221,26 +234,26 @@ void kmain(void) {
     // }
 
     // Initialize and demo the network stack
-    kprintf(10, 465, "=== Network Stack Demo ===");
+    kprintf(10, 495, "=== Network Stack Demo ===");
     
     // Initialize PCI subsystem
-    kprintf(10, 480, "Initializing PCI subsystem...");
+    kprintf(10, 510, "Initializing PCI subsystem...");
     DEBUG_INFO("Starting PCI subsystem initialization\n");
     pci_init();
     DEBUG_INFO("PCI subsystem initialization completed\n");
-    kprintf(10, 495, "PCI bus scan completed");
+    kprintf(10, 525, "PCI bus scan completed");
     
     // Print discovered PCI devices to debug console only
     pci_print_devices(0, 0); // Parameters are ignored now since we use debug console
     
     // Initialize the network stack
-    kprintf(10, 510, "Initializing network stack...");
+    kprintf(10, 540, "Initializing network stack...");
     DEBUG_INFO("Starting network stack initialization\n");
     
     if (network_init() == 0) {
-        kprintf(10, 525, "Network stack initialized successfully");
+        kprintf(10, 555, "Network stack initialized successfully");
         DEBUG_INFO("Network stack initialization completed successfully\n");
-        kprintf(10, 540, "Checking network interfaces...");
+        kprintf(10, 570, "Checking network interfaces...");
         
         // Real Network Demo - Attempt actual DHCP
         network_interface_t *eth_iface = network_get_interface(1); // eth0 interface
@@ -257,7 +270,7 @@ void kmain(void) {
                 kprintf(10, 600, "Real network hardware detected");
             } else {
                 kprintf(10, 585, "Using stub ethernet interface");
-                kprintf(10, 600, "E1000 MMIO disabled (no virtual memory mgmt)");
+                kprintf(10, 600, "E1000 MMIO now enabled (virtual memory active)");
             }
             
             // Initialize DHCP client for real network communication

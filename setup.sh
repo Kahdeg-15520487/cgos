@@ -1,5 +1,5 @@
-sudo apt-get update
-sudo apt-get install -y coreutils make mtools xorriso
+apt-get update
+apt-get install -y coreutils make mtools xorriso
 
 # Only clone if limine-bin directory doesn't exist
 if [ ! -d "limine-bin" ]; then

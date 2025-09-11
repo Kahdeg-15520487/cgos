@@ -1,6 +1,8 @@
 #include "e1000.h"
 #include "../memory/memory.h"
+#include "../memory/vmm.h"
 #include "../graphic/graphic.h"
+#include "../debug/debug.h"
 
 static e1000_device_t e1000_dev;
 static bool e1000_initialized = false;
@@ -13,17 +15,18 @@ static uint8_t tx_buffers[E1000_NUM_TX_DESC][E1000_BUFFER_SIZE] __attribute__((a
 static uint8_t *rx_buffer_ptrs[E1000_NUM_RX_DESC];
 static uint8_t *tx_buffer_ptrs[E1000_NUM_TX_DESC];
 
-// Simple memory mapping for MMIO (this would need proper virtual memory management)
+// Memory mapping for MMIO using virtual memory manager
 static void *map_physical_memory(uintptr_t phys_addr, size_t size) {
-    // In a real kernel, this would set up page tables for MMIO
-    // For now, we'll disable E1000 MMIO access to prevent page faults
-    // since we don't have virtual memory management set up
-    (void)size; // Avoid unused parameter warning
-    (void)phys_addr;
+    DEBUG_INFO("Mapping E1000 MMIO: phys=0x%lx size=0x%lx\n", phys_addr, size);
     
-    // Return NULL to indicate MMIO mapping failed
-    // This will prevent the driver from trying to access unmapped memory
-    return NULL;
+    void *virt_addr = vmm_map_mmio(phys_addr, size);
+    if (virt_addr) {
+        DEBUG_INFO("E1000 MMIO mapped to virtual address: %p\n", virt_addr);
+    } else {
+        DEBUG_ERROR("Failed to map E1000 MMIO region\n");
+    }
+    
+    return virt_addr;
 }
 
 uint32_t e1000_read_reg(e1000_device_t *dev, uint32_t reg) {

@@ -1,0 +1,17 @@
+# Exclude build artifacts
+cgos.iso
+bin/
+obj/
+iso_root/
+limine-bin/
+
+# Exclude git and other metadata
+.git/
+.gitignore
+README.md
+
+# Exclude OS-specific files
+.DS_Store
+Thumbs.db
+*.tmp
+*.log

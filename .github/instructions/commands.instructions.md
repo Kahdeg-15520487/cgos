@@ -5,3 +5,4 @@ Provide project context and coding guidelines that AI should follow when generat
 
 build project by running makeiso.cmd
 run project by running run.cmd
+run project with detailed logs with rundebug.cmd
