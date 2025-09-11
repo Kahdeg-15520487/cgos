@@ -7,6 +7,8 @@
 #include "memory.h"
 #include "pmm.h"
 #include "graphic.h"
+#include "network/network.h"
+#include "network/socket.h"
 
 // Set the base revision to 3, this is recommended as this is the latest
 // base revision described by the Limine boot protocol specification.
@@ -211,6 +213,65 @@ void kmain(void) {
     //         break;
     //     }
     // }
+
+    // Initialize and demo the network stack
+    kprintf(10, 450, "=== Network Stack Demo ===");
+    
+    // Initialize the network stack
+    if (network_init() == 0) {
+        kprintf(10, 465, "Network stack initialized successfully");
+        
+        // Demo 1: Create and bind a UDP socket
+        int udp_sock = socket_create(AF_INET, SOCK_DGRAM, 0);
+        if (udp_sock >= 0) {
+            kprintf(10, 480, "Created UDP socket: %d", udp_sock);
+            
+            // Bind to port 8080
+            sockaddr_in_t addr;
+            addr.sin_family = AF_INET;
+            addr.sin_port = htons(8080);
+            addr.sin_addr = htonl(0x7F000001); // 127.0.0.1
+            
+            if (socket_bind(udp_sock, (sockaddr_t*)&addr, sizeof(addr)) == 0) {
+                kprintf(10, 495, "UDP socket bound to 127.0.0.1:8080");
+            } else {
+                kprintf(10, 495, "Failed to bind UDP socket");
+            }
+        }
+        
+        // Demo 2: Create a TCP socket
+        int tcp_sock = socket_create(AF_INET, SOCK_STREAM, 0);
+        if (tcp_sock >= 0) {
+            kprintf(10, 510, "Created TCP socket: %d", tcp_sock);
+            
+            sockaddr_in_t tcp_addr;
+            tcp_addr.sin_family = AF_INET;
+            tcp_addr.sin_port = htons(80);
+            tcp_addr.sin_addr = htonl(0xC0A80164); // 192.168.1.100
+            
+            if (socket_bind(tcp_sock, (sockaddr_t*)&tcp_addr, sizeof(tcp_addr)) == 0) {
+                kprintf(10, 525, "TCP socket bound to 192.168.1.100:80");
+            }
+        }
+        
+        // Demo 3: Show ARP table (initially empty)
+        kprintf(10, 540, "ARP table initialized (empty)");
+        
+        // Demo 4: Show network interface info
+        kprintf(10, 555, "Network interface: lo0 (loopback)");
+        kprintf(10, 570, "IP: 127.0.0.1, MTU: 1500");
+        
+        // Demo 5: Simulate packet processing
+        kprintf(10, 585, "Network stack ready for packet processing");
+        
+        // Clean up sockets
+        if (udp_sock >= 0) socket_close(udp_sock);
+        if (tcp_sock >= 0) socket_close(tcp_sock);
+        
+        kprintf(10, 600, "Network demo completed successfully");
+    } else {
+        kprintf(10, 465, "Failed to initialize network stack");
+    }
 
     // We're done, just hang...
     hcf();

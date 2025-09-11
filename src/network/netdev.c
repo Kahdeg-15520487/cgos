@@ -1,0 +1,210 @@
+#include "netdev.h"
+#include "network.h"
+#include "../memory/memory.h"
+
+// Simple string functions for kernel
+static int netdev_strcmp(const char *s1, const char *s2) {
+    while (*s1 && (*s1 == *s2)) {
+        s1++;
+        s2++;
+    }
+    return *(unsigned char*)s1 - *(unsigned char*)s2;
+}
+
+static char *netdev_strncpy(char *dest, const char *src, size_t n) {
+    size_t i;
+    for (i = 0; i < n - 1 && src[i] != '\0'; i++) {
+        dest[i] = src[i];
+    }
+    for (; i < n; i++) {
+        dest[i] = '\0';
+    }
+    return dest;
+}
+
+#define MAX_PACKET_QUEUE 16
+
+// Simple packet queue for loopback
+typedef struct packet_queue {
+    uint8_t packets[MAX_PACKET_QUEUE][ETHERNET_FRAME_SIZE];
+    size_t lengths[MAX_PACKET_QUEUE];
+    int head;
+    int tail;
+    int count;
+} packet_queue_t;
+
+static packet_queue_t loopback_queue = {0};
+
+// Loopback device operations
+static int loopback_send(network_interface_t *iface, void *data, size_t len) {
+    if (!data || len == 0 || len > ETHERNET_FRAME_SIZE) {
+        return NET_INVALID_PARAM;
+    }
+
+    // Add packet to queue
+    if (loopback_queue.count >= MAX_PACKET_QUEUE) {
+        return NET_BUFFER_FULL;
+    }
+
+    int index = loopback_queue.tail;
+    memcpy(loopback_queue.packets[index], data, len);
+    loopback_queue.lengths[index] = len;
+    loopback_queue.tail = (loopback_queue.tail + 1) % MAX_PACKET_QUEUE;
+    loopback_queue.count++;
+
+    return NET_SUCCESS;
+}
+
+static int loopback_receive(network_interface_t *iface, void *buffer, size_t max_len) {
+    if (!buffer || max_len == 0) {
+        return NET_INVALID_PARAM;
+    }
+
+    // Get packet from queue
+    if (loopback_queue.count == 0) {
+        return 0; // No packets available
+    }
+
+    int index = loopback_queue.head;
+    size_t len = loopback_queue.lengths[index];
+    
+    if (len > max_len) {
+        return NET_ERROR; // Buffer too small
+    }
+
+    memcpy(buffer, loopback_queue.packets[index], len);
+    loopback_queue.head = (loopback_queue.head + 1) % MAX_PACKET_QUEUE;
+    loopback_queue.count--;
+
+    return len;
+}
+
+static int loopback_start(network_interface_t *iface) {
+    // Loopback is always ready
+    return NET_SUCCESS;
+}
+
+static int loopback_stop(network_interface_t *iface) {
+    // Clear packet queue
+    loopback_queue.head = 0;
+    loopback_queue.tail = 0;
+    loopback_queue.count = 0;
+    return NET_SUCCESS;
+}
+
+static int loopback_init_dev(network_interface_t *iface) {
+    // Initialize loopback queue
+    loopback_queue.head = 0;
+    loopback_queue.tail = 0;
+    loopback_queue.count = 0;
+    return NET_SUCCESS;
+}
+
+static void loopback_set_mac(network_interface_t *iface, uint8_t *mac) {
+    if (mac) {
+        memcpy(iface->mac_address, mac, 6);
+    }
+}
+
+static void loopback_get_mac(network_interface_t *iface, uint8_t *mac) {
+    if (mac) {
+        memcpy(mac, iface->mac_address, 6);
+    }
+}
+
+static netdev_ops_t loopback_ops = {
+    .init = loopback_init_dev,
+    .start = loopback_start,
+    .stop = loopback_stop,
+    .send = loopback_send,
+    .receive = loopback_receive,
+    .set_mac = loopback_set_mac,
+    .get_mac = loopback_get_mac
+};
+
+int netdev_register(const char *name, netdev_ops_t *ops, uint8_t *mac_addr, uint32_t ip, uint32_t netmask, uint32_t gateway) {
+    if (!name || !ops) {
+        return NET_INVALID_PARAM;
+    }
+
+    // Allocate network interface
+    static network_interface_t interfaces[MAX_NETWORK_INTERFACES];
+    static int interface_count = 0;
+    
+    if (interface_count >= MAX_NETWORK_INTERFACES) {
+        return NET_ERROR;
+    }
+
+    network_interface_t *iface = &interfaces[interface_count];
+    interface_count++;
+
+    // Initialize interface
+    if (mac_addr) {
+        memcpy(iface->mac_address, mac_addr, 6);
+    } else {
+        // Generate default MAC
+        iface->mac_address[0] = 0x02; // Locally administered
+        iface->mac_address[1] = 0x00;
+        iface->mac_address[2] = 0x00;
+        iface->mac_address[3] = 0x00;
+        iface->mac_address[4] = 0x00;
+        iface->mac_address[5] = interface_count;
+    }
+
+    iface->ip_address = ip;
+    iface->subnet_mask = netmask;
+    iface->gateway = gateway;
+    iface->active = false;
+    netdev_strncpy(iface->name, name, sizeof(iface->name) - 1);
+    iface->name[sizeof(iface->name) - 1] = '\0';
+
+    // Set operations
+    iface->send_packet = ops->send;
+    iface->receive_packet = ops->receive;
+
+    // Initialize device
+    if (ops->init) {
+        ops->init(iface);
+    }
+
+    // Register with network stack
+    network_register_interface(iface);
+
+    // Start device
+    if (ops->start) {
+        ops->start(iface);
+    }
+
+    return NET_SUCCESS;
+}
+
+network_interface_t *netdev_get_by_name(const char *name) {
+    if (!name) {
+        return NULL;
+    }
+
+    for (int i = 0; i < MAX_NETWORK_INTERFACES; i++) {
+        network_interface_t *iface = network_get_interface(i);
+        if (iface && netdev_strcmp(iface->name, name) == 0) {
+            return iface;
+        }
+    }
+
+    return NULL;
+}
+
+void netdev_list(void) {
+    // This would list network devices - implement based on your display system
+    // For now, just a placeholder
+}
+
+int loopback_init(void) {
+    uint8_t loopback_mac[6] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x01};
+    return netdev_register("lo", &loopback_ops, loopback_mac, 
+                          0x7F000001, // 127.0.0.1
+                          0xFF000000, // 255.0.0.0
+                          0x7F000001  // 127.0.0.1
+                          );
+}
+
+
