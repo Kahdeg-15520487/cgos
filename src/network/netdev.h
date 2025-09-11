@@ -25,7 +25,10 @@ void netdev_list(void);
 // Loopback driver
 int loopback_init(void);
 
-// Ethernet driver (simulated for DHCP demo)
+// Ethernet driver (now with real E1000 support)
 int ethernet_init(void);
+
+// E1000 driver
+int e1000_register_netdev(void);
 
 #endif // NETDEV_H

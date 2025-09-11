@@ -1,6 +1,10 @@
 #include "netdev.h"
 #include "network.h"
 #include "../memory/memory.h"
+#include "../drivers/e1000.h"
+#include "../pci/pci.h"
+#include "../pci/pci.h"
+#include "../drivers/e1000.h"
 
 // Simple string functions for kernel
 static int netdev_strcmp(const char *s1, const char *s2) {
@@ -257,8 +261,18 @@ static netdev_ops_t ethernet_ops = {
     .init = ethernet_init_dev
 };
 
-// Create a simulated ethernet interface for DHCP demo
+// Create a real ethernet interface using E1000 driver
 int ethernet_init(void) {
+    // Initialize PCI subsystem
+    pci_init();
+    
+    // Try to initialize E1000 driver
+    if (e1000_init() == 0) {
+        // E1000 device found and initialized, register it as network device
+        return e1000_register_netdev();
+    }
+    
+    // Fallback to simulated ethernet interface if no E1000 found
     uint8_t ethernet_mac[6] = {0x02, 0x00, 0x00, 0x12, 0x34, 0x56}; // Locally administered MAC
     return netdev_register("eth0", &ethernet_ops, ethernet_mac,
                           0x00000000, // 0.0.0.0 (will be set by DHCP)
