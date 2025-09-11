@@ -230,98 +230,98 @@ void kmain(void) {
     DEBUG_INFO("PCI subsystem initialization completed\n");
     kprintf(10, 495, "PCI bus scan completed");
     
-    // Print discovered PCI devices
-    pci_print_devices(10, 510);
+    // Print discovered PCI devices to debug console only
+    pci_print_devices(0, 0); // Parameters are ignored now since we use debug console
     
     // Initialize the network stack
-    kprintf(10, 900, "Initializing network stack...");
+    kprintf(10, 510, "Initializing network stack...");
     DEBUG_INFO("Starting network stack initialization\n");
     
     if (network_init() == 0) {
-        kprintf(10, 915, "Network stack initialized successfully");
+        kprintf(10, 525, "Network stack initialized successfully");
         DEBUG_INFO("Network stack initialization completed successfully\n");
-        kprintf(10, 930, "Checking network interfaces...");
+        kprintf(10, 540, "Checking network interfaces...");
         
         // Real Network Demo - Attempt actual DHCP
         network_interface_t *eth_iface = network_get_interface(1); // eth0 interface
         if (eth_iface) {
-            kprintf(10, 945, "Found ethernet interface: %s", eth_iface->name);
-            kprintf(10, 960, "MAC Address: %02x:%02x:%02x:%02x:%02x:%02x", 
+            kprintf(10, 555, "Found ethernet interface: %s", eth_iface->name);
+            kprintf(10, 570, "MAC Address: %x:%x:%x:%x:%x:%x", 
                    eth_iface->mac_address[0], eth_iface->mac_address[1], 
                    eth_iface->mac_address[2], eth_iface->mac_address[3],
                    eth_iface->mac_address[4], eth_iface->mac_address[5]);
             
             // Check if this is a real E1000 interface or stub
             if (eth_iface->mac_address[0] == 0x52 && eth_iface->mac_address[1] == 0x54) {
-                kprintf(10, 975, "E1000 hardware driver active");
-                kprintf(10, 990, "Real network hardware detected");
+                kprintf(10, 585, "E1000 hardware driver active");
+                kprintf(10, 600, "Real network hardware detected");
             } else {
-                kprintf(10, 975, "Using stub ethernet interface");
-                kprintf(10, 990, "E1000 MMIO disabled (no virtual memory mgmt)");
+                kprintf(10, 585, "Using stub ethernet interface");
+                kprintf(10, 600, "E1000 MMIO disabled (no virtual memory mgmt)");
             }
             
             // Initialize DHCP client for real network communication
-            kprintf(10, 1005, "Initializing DHCP client...");
+            kprintf(10, 615, "Initializing DHCP client...");
             if (dhcp_client_init(eth_iface) == 0) {
                 dhcp_client_t *dhcp_client = dhcp_get_client(eth_iface);
                 
                 if (dhcp_client) {
-                    kprintf(10, 1020, "DHCP client initialized successfully");
-                    kprintf(10, 1035, "Sending DHCP DISCOVER to network...");
+                    kprintf(10, 630, "DHCP client initialized successfully");
+                    kprintf(10, 645, "Sending DHCP DISCOVER to network...");
                     
                     // Start real DHCP process (would send actual packets)
                     if (dhcp_client_start(dhcp_client) == 0) {
-                        kprintf(10, 1050, "DHCP DISCOVER packet prepared");
-                        kprintf(10, 1065, "Network demo completed successfully");
+                        kprintf(10, 660, "DHCP DISCOVER packet prepared");
+                        kprintf(10, 675, "Network demo completed successfully");
                         
                         // Show current interface status
                         if (eth_iface->ip_address == 0) {
-                            kprintf(10, 1080, "Interface status: No IP address assigned");
-                            kprintf(10, 1095, "IP: 0.0.0.0 (waiting for DHCP response)");
+                            kprintf(10, 690, "Interface status: No IP address assigned");
+                            kprintf(10, 705, "IP: 0.0.0.0 (waiting for DHCP response)");
                         } else {
-                            kprintf(10, 1080, "Interface status: IP address configured");
-                            kprintf(10, 1095, "IP: %d.%d.%d.%d", 
+                            kprintf(10, 690, "Interface status: IP address configured");
+                            kprintf(10, 705, "IP: %d.%d.%d.%d", 
                                    (eth_iface->ip_address >> 24) & 0xFF,
                                    (eth_iface->ip_address >> 16) & 0xFF,
                                    (eth_iface->ip_address >> 8) & 0xFF,
                                    eth_iface->ip_address & 0xFF);
                         }
                         
-                        kprintf(10, 1110, "Real network packets transmitted to QEMU");
+                        kprintf(10, 720, "Real network packets transmitted to QEMU");
                     } else {
-                        kprintf(10, 1035, "Failed to start DHCP client");
+                        kprintf(10, 645, "Failed to start DHCP client");
                     }
                 } else {
-                    kprintf(10, 1035, "Failed to get DHCP client instance");
+                    kprintf(10, 645, "Failed to get DHCP client instance");
                 }
             } else {
-                kprintf(10, 1020, "Failed to initialize DHCP client");
+                kprintf(10, 630, "Failed to initialize DHCP client");
             }
         } else {
-            kprintf(10, 945, "No ethernet interface found");
+            kprintf(10, 555, "No ethernet interface found");
             
             // Show loopback interface instead
             network_interface_t *lo_iface = network_get_interface(0); // loopback
             if (lo_iface) {
-                kprintf(10, 960, "Using loopback interface: %s", lo_iface->name);
-                kprintf(10, 975, "IP: %d.%d.%d.%d", 
+                kprintf(10, 570, "Using loopback interface: %s", lo_iface->name);
+                kprintf(10, 585, "IP: %d.%d.%d.%d", 
                        (lo_iface->ip_address >> 24) & 0xFF,
                        (lo_iface->ip_address >> 16) & 0xFF,
                        (lo_iface->ip_address >> 8) & 0xFF,
                        lo_iface->ip_address & 0xFF);
-                kprintf(10, 990, "Status: Active (software-only)");
+                kprintf(10, 600, "Status: Active (software-only)");
             } else {
-                kprintf(10, 960, "No network interfaces available");
+                kprintf(10, 570, "No network interfaces available");
             }
         }
         
-        kprintf(10, 1125, "Network initialization completed");
+        kprintf(10, 735, "Network initialization completed");
     } else {
-        kprintf(10, 915, "ERROR: Network stack initialization failed!");
-        kprintf(10, 930, "System continuing without network support");
+        kprintf(10, 525, "ERROR: Network stack initialization failed!");
+        kprintf(10, 540, "System continuing without network support");
     }
     
-    kprintf(10, 1140, "System boot completed - OS ready");
+    kprintf(10, 750, "System boot completed - OS ready");
 
     // We're done, just hang...
     hcf();

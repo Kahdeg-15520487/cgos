@@ -302,19 +302,24 @@ int e1000_probe(pci_device_t *pci_dev) {
     // Get MMIO base address from BAR0
     uint32_t bar0 = pci_dev->bar[0];
     if (!(bar0 & 0x1)) { // Memory-mapped I/O
-        e1000_dev.mmio_base = (uintptr_t)(bar0 & 0xFFFFFFF0);
+        uintptr_t physical_base = (uintptr_t)(bar0 & 0xFFFFFFF0);
         
         // Validate MMIO address
-        if (e1000_dev.mmio_base == 0) {
+        if (physical_base == 0) {
             return -1;
         }
         
-        // Test if MMIO is accessible by reading device status
-        void *mapped = map_physical_memory(e1000_dev.mmio_base, 0x20000);
+        // Test if MMIO is accessible by trying to map it
+        void *mapped = map_physical_memory(physical_base, 0x20000);
         if (!mapped) {
+            // MMIO mapping failed - no virtual memory management available
+            // Set mmio_base to 0 to indicate MMIO is disabled
             e1000_dev.mmio_base = 0;
             return -1;
         }
+        
+        // If we reach here, MMIO mapping succeeded
+        e1000_dev.mmio_base = physical_base;
         
         // Try to read the status register to verify MMIO access
         uint32_t status = e1000_read_reg(&e1000_dev, E1000_STATUS);
