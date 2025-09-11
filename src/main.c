@@ -13,6 +13,7 @@
 #include "network/socket.h"
 #include "network/dhcp.h"
 #include "debug/debug.h"
+#include "interrupt/interrupt.h"
 
 // Set the base revision to 3, this is recommended as this is the latest
 // base revision described by the Limine boot protocol specification.
@@ -115,27 +116,34 @@ void kmain(void) {
             hcf();
         }
         
+        // Initialize interrupt system
+        kprintf(10, 155, "Initializing interrupt system...");
+        DEBUG_INFO("Starting interrupt system initialization\n");
+        interrupt_init();
+        kprintf(10, 170, "Interrupt system initialized successfully");
+        DEBUG_INFO("Interrupt system initialization completed\n");
+        
         // Test physical memory allocation
         void *page1 = physical_alloc_page();
         void *page2 = physical_alloc_page();
         void *pages = physical_alloc_pages(4);
         
-        kprintf(10, 155, "Allocated page 1 at: %p", page1);
-        kprintf(10, 170, "Allocated page 2 at: %p", page2);
-        kprintf(10, 185, "Allocated 4 contiguous pages at: %p", pages);
+        kprintf(10, 185, "Allocated page 1 at: %p", page1);
+        kprintf(10, 200, "Allocated page 2 at: %p", page2);
+        kprintf(10, 215, "Allocated 4 contiguous pages at: %p", pages);
         
         // Print memory statistics
-        physical_print_stats(10, 200);
+        physical_print_stats(10, 230);
         // Draw the memory bitmap visualization
-        kprintf(10, 295, "Memory Bitmap Visualization:");
-        draw_memory_bitmap(10, 310, 600, 150);
+        kprintf(10, 325, "Memory Bitmap Visualization:");
+        draw_memory_bitmap(10, 340, 600, 150);
         
         // Free the pages
         physical_free_page(page1);
         physical_free_page(page2);
         physical_free_pages(pages, 4);
         
-        kprintf(130, 200, "Freed all allocated pages");
+        kprintf(130, 230, "Freed all allocated pages");
 
 
     } else {
@@ -234,42 +242,42 @@ void kmain(void) {
     // }
 
     // Initialize and demo the network stack
-    kprintf(10, 495, "=== Network Stack Demo ===");
+    kprintf(10, 525, "=== Network Stack Demo ===");
     
     // Initialize PCI subsystem
-    kprintf(10, 510, "Initializing PCI subsystem...");
+    kprintf(10, 540, "Initializing PCI subsystem...");
     DEBUG_INFO("Starting PCI subsystem initialization\n");
     pci_init();
     DEBUG_INFO("PCI subsystem initialization completed\n");
-    kprintf(10, 525, "PCI bus scan completed");
+    kprintf(10, 555, "PCI bus scan completed");
     
     // Print discovered PCI devices to debug console only
     pci_print_devices(0, 0); // Parameters are ignored now since we use debug console
     
     // Initialize the network stack
-    kprintf(10, 540, "Initializing network stack...");
+    kprintf(10, 570, "Initializing network stack...");
     DEBUG_INFO("Starting network stack initialization\n");
     
     if (network_init() == 0) {
-        kprintf(10, 555, "Network stack initialized successfully");
+        kprintf(10, 585, "Network stack initialized successfully");
         DEBUG_INFO("Network stack initialization completed successfully\n");
-        kprintf(10, 570, "Checking network interfaces...");
+        kprintf(10, 600, "Checking network interfaces...");
         
         // Real Network Demo - Attempt actual DHCP
         network_interface_t *eth_iface = network_get_interface(1); // eth0 interface
         if (eth_iface) {
-            kprintf(10, 555, "Found ethernet interface: %s", eth_iface->name);
-            kprintf(10, 570, "MAC Address: %x:%x:%x:%x:%x:%x", 
+            kprintf(10, 585, "Found ethernet interface: %s", eth_iface->name);
+            kprintf(10, 600, "MAC Address: %x:%x:%x:%x:%x:%x", 
                    eth_iface->mac_address[0], eth_iface->mac_address[1], 
                    eth_iface->mac_address[2], eth_iface->mac_address[3],
                    eth_iface->mac_address[4], eth_iface->mac_address[5]);
             
             // Check if this is a real E1000 interface or stub
             if (eth_iface->mac_address[0] == 0x52 && eth_iface->mac_address[1] == 0x54) {
-                kprintf(10, 585, "E1000 hardware driver active");
-                kprintf(10, 600, "Real network hardware detected");
+                kprintf(10, 615, "E1000 hardware driver active");
+                kprintf(10, 630, "Real network hardware detected");
             } else {
-                kprintf(10, 585, "Using stub ethernet interface");
+                kprintf(10, 615, "Using stub ethernet interface");
                 kprintf(10, 600, "E1000 MMIO now enabled (virtual memory active)");
             }
             

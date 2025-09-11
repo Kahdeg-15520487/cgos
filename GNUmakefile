@@ -56,6 +56,7 @@ override CPPFLAGS := \
     -I src/pci \
     -I src/drivers \
     -I src/debug \
+    -I src/interrupt \
     -I limine-bin \
     $(CPPFLAGS) \
     -DLIMINE_API_REVISION=3 \
@@ -76,14 +77,15 @@ override LDFLAGS += \
     -z max-page-size=0x1000 \
     -T linker.ld
 
-# Use "find" to glob all *.c, *.S, and *.asm files in the tree and obtain the
+# Use "find" to glob all *.c, *.S, *.s, and *.asm files in the tree and obtain the
 # object and header dependency file names.
 override SRCFILES := $(shell cd src && find -L * -type f | LC_ALL=C sort)
 override CFILES := $(filter %.c,$(SRCFILES))
 override ASFILES := $(filter %.S,$(SRCFILES))
+override SFILES := $(filter %.s,$(SRCFILES))
 override NASMFILES := $(filter %.asm,$(SRCFILES))
-override OBJ := $(addprefix obj/,$(CFILES:.c=.c.o) $(ASFILES:.S=.S.o) $(NASMFILES:.asm=.asm.o))
-override HEADER_DEPS := $(addprefix obj/,$(CFILES:.c=.c.d) $(ASFILES:.S=.S.d))
+override OBJ := $(addprefix obj/,$(CFILES:.c=.c.o) $(ASFILES:.S=.S.o) $(SFILES:.s=.s.o) $(NASMFILES:.asm=.asm.o))
+override HEADER_DEPS := $(addprefix obj/,$(CFILES:.c=.c.d) $(ASFILES:.S=.S.d) $(SFILES:.s=.s.d))
 
 # Default target. This must come first, before header dependencies.
 .PHONY: all
@@ -106,6 +108,11 @@ obj/%.c.o: src/%.c GNUmakefile
 
 # Compilation rules for *.S files.
 obj/%.S.o: src/%.S GNUmakefile
+	mkdir -p "$$(dirname $@)"
+	$(CC) $(CFLAGS) $(CPPFLAGS) -c $< -o $@
+
+# Compilation rules for *.s files.
+obj/%.s.o: src/%.s GNUmakefile
 	mkdir -p "$$(dirname $@)"
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c $< -o $@
 
