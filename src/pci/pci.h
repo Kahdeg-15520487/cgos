@@ -88,6 +88,7 @@ pci_device_t *pci_find_device(uint16_t vendor_id, uint16_t device_id);
 int pci_scan_devices(void);
 pci_device_t *pci_get_device(int index);
 int pci_get_device_count(void);
+void pci_print_devices(int start_x, int start_y);
 
 // I/O port functions (these should be implemented in your kernel)
 static inline void outl(uint16_t port, uint32_t value) {

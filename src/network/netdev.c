@@ -263,10 +263,7 @@ static netdev_ops_t ethernet_ops = {
 
 // Create a real ethernet interface using E1000 driver
 int ethernet_init(void) {
-    // Initialize PCI subsystem
-    pci_init();
-    
-    // Try to initialize E1000 driver
+    // Try to initialize E1000 driver (PCI should already be initialized)
     if (e1000_init() == 0) {
         // E1000 device found and initialized, register it as network device
         return e1000_register_netdev();

@@ -8,11 +8,14 @@
 #include "netdev.h"
 #include "../memory/memory.h"
 #include "../graphic/graphic.h"
+#include "../debug/debug.h"
 
 static network_interface_t *interfaces[MAX_NETWORK_INTERFACES];
 static int interface_count = 0;
 
 int network_init(void) {
+    DEBUG_INFO("Initializing network subsystem\n");
+    
     // Initialize all network interfaces to NULL
     for (int i = 0; i < MAX_NETWORK_INTERFACES; i++) {
         interfaces[i] = NULL;
@@ -20,36 +23,51 @@ int network_init(void) {
     interface_count = 0;
 
     // Initialize network protocols
+    DEBUG_DEBUG("Initializing ARP protocol\n");
     if (arp_init() != NET_SUCCESS) {
+        DEBUG_ERROR("Failed to initialize ARP protocol\n");
         return NET_ERROR;
     }
     
+    DEBUG_DEBUG("Initializing IP protocol\n");
     if (ip_init() != NET_SUCCESS) {
+        DEBUG_ERROR("Failed to initialize IP protocol\n");
         return NET_ERROR;
     }
     
+    DEBUG_DEBUG("Initializing UDP protocol\n");
     if (udp_init() != NET_SUCCESS) {
+        DEBUG_ERROR("Failed to initialize UDP protocol\n");
         return NET_ERROR;
     }
     
+    DEBUG_DEBUG("Initializing TCP protocol\n");
     if (tcp_init() != NET_SUCCESS) {
+        DEBUG_ERROR("Failed to initialize TCP protocol\n");
         return NET_ERROR;
     }
     
+    DEBUG_DEBUG("Initializing ICMP protocol\n");
     if (icmp_init() != NET_SUCCESS) {
+        DEBUG_ERROR("Failed to initialize ICMP protocol\n");
         return NET_ERROR;
     }
 
     // Initialize network devices
+    DEBUG_DEBUG("Initializing loopback interface\n");
     if (loopback_init() != NET_SUCCESS) {
+        DEBUG_ERROR("Failed to initialize loopback interface\n");
         return NET_ERROR;
     }
     
     // Initialize ethernet interface for DHCP demo
+    DEBUG_DEBUG("Initializing ethernet interface\n");
     if (ethernet_init() != NET_SUCCESS) {
+        DEBUG_WARN("Failed to initialize ethernet interface, continuing with loopback only\n");
         // Don't fail if ethernet init fails, just continue with loopback
     }
 
+    DEBUG_INFO("Network subsystem initialization completed successfully\n");
     return NET_SUCCESS;
 }
 
