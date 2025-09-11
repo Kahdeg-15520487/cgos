@@ -134,7 +134,7 @@ void kmain(void) {
         uint32_t random_color = ((rand() & 0xFF) << 16) | ((rand() & 0xFF) << 8) | (rand() & 0xFF); // Generate a random color
         for (size_t j = 0; j < 10; j++) { // Increase the line width to 10 pixels
             volatile uint32_t *fb_ptr = framebuffer->address;
-            fb_ptr[(i * (framebuffer->pitch / 4)) + (i + j)] = random_color;
+            fb_ptr[(i * (framebuffer->pitch / 4)) + (i + j + 300)] = random_color;
         }
     }
 
