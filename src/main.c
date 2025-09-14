@@ -7,6 +7,7 @@
 #include "memory.h"
 #include "pmm.h"
 #include "graphic.h"
+#include "debug/debug.h"
 
 // Set the base revision to 3, this is recommended as this is the latest
 // base revision described by the Limine boot protocol specification.
@@ -77,6 +78,8 @@ void kmain(void) {
      || framebuffer_request.response->framebuffer_count < 1) {
         hcf();
     }
+
+    DEBUG_INFO("Kernel initialized");
     
     // Initialize random number generator
     srand(__TIME__[7] + __TIME__[6] * 10 + __TIME__[4] * 60 + __TIME__[3] * 600 + __TIME__[1] * 3600 + __TIME__[0] * 36000); // Seed with compile time value based on __TIME__
