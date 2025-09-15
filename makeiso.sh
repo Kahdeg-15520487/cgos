@@ -1,29 +1,45 @@
-make
+#!/bin/bash
 
-# Create a directory which will be our ISO root.
-mkdir -p iso_root
+# CGOS Build Script - Creates bootable ISO image
+set -e  # Exit on any error
 
-# Copy the relevant files over.
-mkdir -p iso_root/boot
-cp -v bin/cgos iso_root/boot/
-mkdir -p iso_root/boot/limine
-cp -v limine.conf limine-bin/limine-bios.sys limine-bin/limine-bios-cd.bin \
-      limine-bin/limine-uefi-cd.bin iso_root/boot/limine/
+# Colors for cleaner output
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
 
-# Create the EFI boot tree and copy Limine's EFI executables over.
-mkdir -p iso_root/EFI/BOOT
-cp -v limine-bin/BOOTX64.EFI iso_root/EFI/BOOT/
-cp -v limine-bin/BOOTIA32.EFI iso_root/EFI/BOOT/
+echo -e "${BLUE}=== CGOS Build System ===${NC}"
 
-# Create the bootable ISO.
+# Build kernel
+echo -e "${BLUE}[1/4]${NC} Building kernel..."
+make -s
+echo -e "${GREEN}✓${NC} Kernel built successfully"
+
+# Prepare ISO structure
+echo -e "${BLUE}[2/4]${NC} Preparing ISO structure..."
+mkdir -p iso_root/boot iso_root/boot/limine iso_root/EFI/BOOT
+
+# Copy files quietly
+echo -e "${BLUE}[3/4]${NC} Installing bootloader files..."
+cp bin/cgos iso_root/boot/
+cp limine.conf limine-bin/limine-bios.sys limine-bin/limine-bios-cd.bin \
+   limine-bin/limine-uefi-cd.bin iso_root/boot/limine/
+cp limine-bin/BOOTX64.EFI iso_root/EFI/BOOT/
+cp limine-bin/BOOTIA32.EFI iso_root/EFI/BOOT/
+echo -e "${GREEN}✓${NC} Files installed"
+
+# Create ISO and install bootloader
+echo -e "${BLUE}[4/4]${NC} Creating bootable ISO..."
 xorriso -as mkisofs -R -r -J -b boot/limine/limine-bios-cd.bin \
         -no-emul-boot -boot-load-size 4 -boot-info-table -hfsplus \
         -apm-block-size 2048 --efi-boot boot/limine/limine-uefi-cd.bin \
         -efi-boot-part --efi-boot-image --protective-msdos-label \
-        iso_root -o cgos.iso
+        iso_root -o cgos.iso 2>/dev/null
 
-# Install Limine stage 1 and 2 for legacy BIOS boot.
-./limine-bin/limine bios-install cgos.iso
+./limine-bin/limine bios-install cgos.iso 2>/dev/null
+
+echo -e "${GREEN}✓${NC} Build complete: ${YELLOW}cgos.iso${NC} ready"
 
 # # Create an empty zeroed-out 64MiB image file.
 # dd if=/dev/zero bs=1M count=0 seek=64 of=image.hdd

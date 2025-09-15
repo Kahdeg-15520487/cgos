@@ -24,6 +24,14 @@ RUN apt-get update && apt-get install -y \
 # Set up the working directory
 WORKDIR /workspace
 
+# Copy setup script and run it during image build
+COPY setup.sh /tmp/setup.sh
+RUN dos2unix /tmp/setup.sh && \
+    chmod +x /tmp/setup.sh && \
+    cd /workspace && \
+    /tmp/setup.sh && \
+    rm /tmp/setup.sh
+
 # Create a build script to run at container start time
 COPY <<EOF /usr/local/bin/build.sh
 #!/bin/bash
@@ -34,15 +42,10 @@ cp -r /src/* /workspace/
 cd /workspace
 
 # Fix line endings and make scripts executable
-dos2unix setup.sh 2>/dev/null || true
 dos2unix makeiso.sh 2>/dev/null || true
-chmod +x setup.sh makeiso.sh
+chmod +x makeiso.sh
 
-# Modify setup script to skip package installation
-sed -i '1,3s/^sudo apt-get/#sudo apt-get/' setup.sh
-
-# Run the setup and build scripts
-./setup.sh
+# Run the build script directly (setup.sh already ran during image build)
 ./makeiso.sh
 
 # Copy the ISO back to the mounted volume
