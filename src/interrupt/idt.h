@@ -22,12 +22,17 @@ typedef struct {
     uint64_t base;           // Base address of IDT
 } __attribute__((packed)) idt_ptr_t;
 
-// Interrupt frame structure (pushed by CPU and our handlers)
+// Interrupt frame structure (matches assembly stack layout)
 typedef struct {
+    // Segment registers (pushed by common stub)
+    uint64_t gs, fs, es, ds;
+    // General purpose registers (pushed by common stub)
     uint64_t r15, r14, r13, r12, r11, r10, r9, r8;
     uint64_t rbp, rdi, rsi, rdx, rcx, rbx, rax;
+    // Interrupt info (pushed by ISR/IRQ macros)
     uint64_t interrupt_number;
     uint64_t error_code;
+    // CPU-pushed values
     uint64_t rip, cs, rflags, rsp, ss;
 } __attribute__((packed)) interrupt_frame_t;
 

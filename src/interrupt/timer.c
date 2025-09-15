@@ -144,6 +144,11 @@ void timer_interrupt_handler(interrupt_frame_t *frame) {
     // Increment system tick counter
     system_ticks++;
     
+    // Add debug output for first few ticks
+    if (system_ticks <= 5) {
+        DEBUG_INFO("Timer interrupt tick: %lu", (unsigned long)system_ticks);
+    }
+    
     // Call global callback if registered
     if (global_callback) {
         global_callback(system_ticks);
