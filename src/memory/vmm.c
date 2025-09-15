@@ -18,6 +18,13 @@ static size_t static_pdp_used = 0;
 static size_t static_pd_used = 0;
 static size_t static_pt_used = 0;
 
+// Simple PDP corruption workaround - pre-allocate first mapping context
+static struct {
+    page_table_t *first_pdp;
+    page_table_t *first_pd;
+    bool initialized;
+} first_mapping = {0};
+
 // Virtual address space management for kernel heap
 #define KERNEL_HEAP_SIZE (64 * 1024 * 1024)  // 64MB kernel heap
 #define MAX_HEAP_BLOCKS 256
@@ -115,6 +122,10 @@ bool vmm_map_page(uintptr_t virtual_addr, uintptr_t physical_addr, uint64_t flag
     DEBUG_INFO("PDP table at: %p", pdp);
     
     DEBUG_INFO("Getting/creating PD table");
+    
+    // Add debugging before using PDP table
+    DEBUG_INFO("About to use PDP table at %p for PD table lookup (index %d)", pdp, (int)pdp_idx);
+    
     // Get or create Page Directory table
     page_table_t *pd = vmm_get_or_create_table(pdp, pdp_idx, 
                                                PTE_PRESENT | PTE_WRITABLE | (flags & PTE_USER));
@@ -409,23 +420,29 @@ static page_table_t *vmm_get_or_create_table(page_table_t *parent, size_t index,
         return NULL;
     }
     
+
+    
     DEBUG_INFO("About to read parent->entries[%zu] from parent table %p", index, parent);
     uint64_t parent_entry = parent->entries[index];
     DEBUG_INFO("Successfully read parent entry[%zu] = 0x%lx", index, parent_entry);
     
     if (parent_entry & PTE_PRESENT) {
-        // Table already exists - but there's a memory corruption issue with reuse
+        // Table already exists, attempt to reuse with detailed debugging
         uintptr_t addr = PTE_GET_ADDR(parent_entry);
         DEBUG_INFO("Found existing table: entry=0x%lx, extracted addr=0x%lx", parent_entry, addr);
         
-        // TEMPORARY: Only reuse PD and PT tables, not PDP tables
-        // Check if this is a PDP table reuse (parent is PML4)
+        page_table_t *existing = (page_table_t *)addr;
+        
+        // PDP table reuse workaround - recreate entries instead of reusing
         if (parent == &static_pml4) {
-            DEBUG_INFO("This is PDP table reuse - SKIPPING due to memory corruption issue");
-            // Fall through to create new table instead
+            DEBUG_INFO("PDP table reuse detected at %p - recreating entry", existing);
+            
+            // Clear the parent entry to force recreation
+            parent->entries[index] = 0;
+            
+            // Fall through to create new PDP table
+            DEBUG_INFO("Cleared PDP entry, will create new PDP table");
         } else {
-            // This is PD or PT table reuse - should be safer
-            page_table_t *existing = (page_table_t *)addr;
             DEBUG_INFO("Reusing non-PDP table at %p", existing);
             return existing;
         }
@@ -460,18 +477,25 @@ static page_table_t *vmm_get_or_create_table(page_table_t *parent, size_t index,
     
     DEBUG_INFO("Allocated new page table at %p", new_table);
     
-    // Clear the new table - do it manually instead of using memset
-    DEBUG_INFO("About to clear new page table at %p", new_table);
-    for (int i = 0; i < 512; i++) {
-        new_table->entries[i] = 0;
-    }
-    DEBUG_INFO("Manually cleared new page table");
+    // Clear the new table using memset
+    DEBUG_INFO("About to clear new page table at %p using memset", new_table);
+    memset(new_table, 0, sizeof(page_table_t));
+    DEBUG_INFO("Cleared new page table with memset");
     
     // Add entry to parent table
     // For now, assume identity mapping since we're setting up initial mappings
     uintptr_t physical_addr = (uintptr_t)new_table;
     parent->entries[index] = physical_addr | flags | PTE_PRESENT;
-    DEBUG_INFO("Added entry to parent table: entry[%d] = %p", (int)index, (void*)(parent->entries[index]));
+    DEBUG_INFO("Added entry to parent table: entry[%d] = 0x%lx", (int)index, parent->entries[index]);
+    DEBUG_INFO("Entry breakdown: phys_addr=0x%lx, flags=0x%lx, present=0x%x", 
+               physical_addr, flags, PTE_PRESENT);
+    
+    // Track table creation for debugging
+    if (parent == &static_pml4) {
+        DEBUG_INFO("Created PDP table - each mapping gets fresh PDP to avoid corruption");
+        DEBUG_INFO("PDP table at %p will handle virtual addresses 0x%lx - 0x%lx", 
+                   new_table, (uintptr_t)index * 0x40000000UL, ((uintptr_t)index + 1) * 0x40000000UL - 1);
+    }
     
     return new_table;
 }
@@ -484,13 +508,13 @@ static void vmm_invalidate_page(uintptr_t virtual_addr) {
 bool vmm_setup_initial_mappings(void) {
     DEBUG_INFO("Setting up initial identity mappings");
     
-    // Test with 2 pages to isolate the crash
-    DEBUG_INFO("Mapping 2 pages (8KB) for debugging");
-    if (!vmm_identity_map_range(0x0, 0x2000, PTE_PRESENT | PTE_WRITABLE)) {
-        DEBUG_ERROR("Failed to identity map 2 pages");
+    // Map first 4 pages (16KB) for basic kernel operations
+    DEBUG_INFO("Mapping 4 pages (16KB) for kernel operations");
+    if (!vmm_identity_map_range(0x0, 0x4000, PTE_PRESENT | PTE_WRITABLE)) {
+        DEBUG_ERROR("Failed to identity map 4 pages");
         return false;
     }
-    DEBUG_INFO("Successfully mapped 2 pages");
+    DEBUG_INFO("Successfully mapped 4 pages");
     
     DEBUG_INFO("Initial identity mappings completed successfully");
     return true;
