@@ -19,9 +19,6 @@ uint64_t max_column = 0;
 
 // Simple 8x8 font
 static const uint8_t font[128][8] = {
-    // Define the font here or include a font header file
-    [0 ... 127] = {0x00}, // Default all characters to empty
-
     // Define a simple 8x8 font for ASCII characters
     ['A'] = {0x18, 0x24, 0x42, 0x7E, 0x42, 0x42, 0x42, 0x00},
     ['B'] = {0x7C, 0x42, 0x42, 0x7C, 0x42, 0x42, 0x7C, 0x00},
@@ -417,7 +414,7 @@ void draw_triangle(int x0, int y0, int x1, int y1, int x2, int y2, int thickness
 }
 
 void draw_pixel(int x, int y, uint32_t color) {
-    if (x >= 0 && x < width && y >= 0 && y < height) {
+    if (x >= 0 && (uint64_t)x < width && y >= 0 && (uint64_t)y < height) {
         ((uint32_t*)framebuffer->address)[y * (framebuffer->pitch / 4) + x] = color;
     }
 }

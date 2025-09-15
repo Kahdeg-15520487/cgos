@@ -29,9 +29,9 @@ bool pic_init(uint8_t master_off, uint8_t slave_off) {
     master_offset = master_off;
     slave_offset = slave_off;
     
-    // Save current masks
-    uint8_t old_master_mask = inb(PIC1_DATA);
-    uint8_t old_slave_mask = inb(PIC2_DATA);
+    // Save current masks (unused but kept for potential future use)
+    (void)inb(PIC1_DATA);  // old_master_mask
+    (void)inb(PIC2_DATA);  // old_slave_mask
     
     // Start initialization sequence in cascade mode
     outb(PIC1_COMMAND, ICW1_INIT | ICW1_ICW4);
