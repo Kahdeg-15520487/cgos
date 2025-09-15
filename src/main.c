@@ -6,8 +6,14 @@
 #include <stdio.h>
 #include "memory.h"
 #include "pmm.h"
+#include "vmm.h"
+#include "gdt.h"
 #include "graphic.h"
 #include "debug/debug.h"
+#include "interrupt/idt.h"
+#include "interrupt/pic.h"
+#include "interrupt/timer.h"
+#include "interrupt/sync.h"
 
 // Set the base revision to 3, this is recommended as this is the latest
 // base revision described by the Limine boot protocol specification.
@@ -32,6 +38,8 @@ static volatile struct limine_memmap_request memmap_request = {
     .id = LIMINE_MEMMAP_REQUEST ,
     .revision = 0
 };
+
+
 
 // Finally, define the start and end markers for the Limine requests.
 // These can also be moved anywhere, to any .c file, as seen fit.
@@ -62,6 +70,18 @@ int rand(void)  // RAND_MAX assumed to be 32767
 void srand(unsigned int seed)
 {
     next = seed;
+}
+
+// Timer callback for demonstration
+void timer_callback_demo(uint64_t ticks) {
+    static uint64_t last_second = 0;
+    
+    // Display uptime every second (100 ticks at 100Hz)
+    if (ticks - last_second >= 100) {
+        last_second = ticks;
+        uint64_t seconds = ticks / 100;
+        kprintf(500, 50, "Uptime: %llu seconds", seconds);
+    }
 }
 
 // The following will be our kernel's entry point.
@@ -97,28 +117,76 @@ void kmain(void) {
     if (physical_memory_init(memmap_request.response)) {
         kprintf(10, 110, "Physical memory manager initialized successfully");
         
+        // Initialize GDT
+        if (gdt_init()) {
+            kprintf(10, 125, "GDT initialized successfully");
+        } else {
+            kprintf(10, 125, "Failed to initialize GDT");
+            hcf();
+        }
+        
+        // Skip VMM for now to test rest of system
+        kprintf(10, 140, "Skipping VMM - using physical addressing");
+        
+        // Initialize IDT
+        if (idt_init()) {
+            kprintf(10, 185, "IDT initialized successfully");
+        } else {
+            kprintf(10, 185, "Failed to initialize IDT");
+            hcf();
+        }
+        
+        // Initialize PIC
+        if (pic_init(0x20, 0x28)) {
+            kprintf(10, 200, "PIC initialized successfully");
+        } else {
+            kprintf(10, 200, "Failed to initialize PIC");
+            hcf();
+        }
+        
+        // Initialize Timer
+        if (timer_init(100)) { // 100 Hz timer
+            kprintf(10, 215, "Timer initialized successfully");
+        } else {
+            kprintf(10, 215, "Failed to initialize timer");
+            hcf();
+        }
+        
+        // Register timer callback
+        timer_register_callback(timer_callback_demo);
+        
+        // Enable interrupts
+        enable_interrupts();
+        kprintf(10, 230, "Interrupts enabled - system is fully operational");
+        
+        // Test virtual memory allocation
+        void *virt_page = vmm_alloc_kernel_pages(1);
+        kprintf(10, 245, "Allocated virtual page at: %p", virt_page);
+        
+        // Test timer
+        kprintf(10, 260, "Testing timer... waiting 2 seconds");
+        timer_sleep_ms(2000);
+        kprintf(10, 275, "Timer test completed - ticks: %llu", timer_get_ticks());
+        
         // Test physical memory allocation
         void *page1 = physical_alloc_page();
         void *page2 = physical_alloc_page();
         void *pages = physical_alloc_pages(4);
         
-        kprintf(10, 125, "Allocated page 1 at: %p", page1);
-        kprintf(10, 140, "Allocated page 2 at: %p", page2);
-        kprintf(10, 155, "Allocated 4 contiguous pages at: %p", pages);
-        
-        // Print memory statistics
-        physical_print_stats(10, 170);
-        // Draw the memory bitmap visualization
-        kprintf(10, 265, "Memory Bitmap Visualization:");
-        draw_memory_bitmap(10, 280, 600, 150);
+        kprintf(10, 290, "Allocated page 1 at: %p", page1);
+        kprintf(10, 305, "Allocated page 2 at: %p", page2);
+        kprintf(10, 320, "Allocated 4 contiguous pages at: %p", pages);
         
         // Free the pages
         physical_free_page(page1);
         physical_free_page(page2);
         physical_free_pages(pages, 4);
+        vmm_free_kernel_pages(virt_page, 1);
         
-        kprintf(10, 170, "Freed all allocated pages");
-
+        kprintf(10, 335, "Freed all allocated pages");
+        
+        // Print memory statistics
+        physical_print_stats(10, 350);
 
     } else {
         kprintf(10, 320, "Failed to initialize physical memory manager");
@@ -142,6 +210,8 @@ void kmain(void) {
     // Example usage of kprintf
     kprintf(10, 70, " height: %d, width: %d.", height, width);
     kprintf(10, 90, " height: %d, width: %d.", height, width);
+
+
 
     // draw a box around the screen
     draw_rect(0, 0, width, height, 1, 0xf080FF, false);

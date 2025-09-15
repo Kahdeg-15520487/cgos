@@ -151,6 +151,44 @@ void debug_printf(const char *format, ...) {
                     debug_putchar(val);
                     break;
                 }
+                case 'z': {
+                    // Handle %zu format specifier
+                    if (*(ptr + 1) == 'u') {
+                        ptr++; // Skip the 'u'
+                        size_t val = va_arg(args, size_t);
+                        debug_utoa((unsigned int)val, buffer, 10);
+                        debug_puts(buffer);
+                    } else {
+                        // Unknown z format, just print it
+                        debug_putchar('%');
+                        debug_putchar(*ptr);
+                    }
+                    break;
+                }
+                case 'l': {
+                    // Handle %lx, %lu, %ld format specifiers
+                    if (*(ptr + 1) == 'x') {
+                        ptr++; // Skip the 'x'
+                        unsigned long val = va_arg(args, unsigned long);
+                        debug_utoa((unsigned int)val, buffer, 16);
+                        debug_puts(buffer);
+                    } else if (*(ptr + 1) == 'u') {
+                        ptr++; // Skip the 'u'
+                        unsigned long val = va_arg(args, unsigned long);
+                        debug_utoa((unsigned int)val, buffer, 10);
+                        debug_puts(buffer);
+                    } else if (*(ptr + 1) == 'd') {
+                        ptr++; // Skip the 'd'
+                        long val = va_arg(args, long);
+                        debug_itoa((int)val, buffer, 10);
+                        debug_puts(buffer);
+                    } else {
+                        // Unknown l format, just print it
+                        debug_putchar('%');
+                        debug_putchar(*ptr);
+                    }
+                    break;
+                }
                 case '%': {
                     debug_putchar('%');
                     break;
@@ -235,6 +273,44 @@ void debug_log(debug_level_t level, const char *format, ...) {
                     debug_putchar(val);
                     break;
                 }
+                case 'z': {
+                    // Handle %zu format specifier
+                    if (*(ptr + 1) == 'u') {
+                        ptr++; // Skip the 'u'
+                        size_t val = va_arg(args, size_t);
+                        debug_utoa((unsigned int)val, buffer, 10);
+                        debug_puts(buffer);
+                    } else {
+                        // Unknown z format, just print it
+                        debug_putchar('%');
+                        debug_putchar(*ptr);
+                    }
+                    break;
+                }
+                case 'l': {
+                    // Handle %lx, %lu, %ld format specifiers
+                    if (*(ptr + 1) == 'x') {
+                        ptr++; // Skip the 'x'
+                        unsigned long val = va_arg(args, unsigned long);
+                        debug_utoa((unsigned int)val, buffer, 16);
+                        debug_puts(buffer);
+                    } else if (*(ptr + 1) == 'u') {
+                        ptr++; // Skip the 'u'
+                        unsigned long val = va_arg(args, unsigned long);
+                        debug_utoa((unsigned int)val, buffer, 10);
+                        debug_puts(buffer);
+                    } else if (*(ptr + 1) == 'd') {
+                        ptr++; // Skip the 'd'
+                        long val = va_arg(args, long);
+                        debug_itoa((int)val, buffer, 10);
+                        debug_puts(buffer);
+                    } else {
+                        // Unknown l format, just print it
+                        debug_putchar('%');
+                        debug_putchar(*ptr);
+                    }
+                    break;
+                }
                 case '%': {
                     debug_putchar('%');
                     break;
@@ -252,6 +328,7 @@ void debug_log(debug_level_t level, const char *format, ...) {
         ptr++;
     }
     
+    debug_putchar('\n');
     va_end(args);
 }
 
