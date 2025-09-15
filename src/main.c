@@ -131,8 +131,13 @@ void kmain(void) {
             hcf();
         }
         
-        // Skip VMM for now to test rest of system
-        kprintf(10, 140, "Skipping VMM - using physical addressing");
+        // Initialize VMM (Virtual Memory Manager)
+        if (vmm_init()) {
+            kprintf(10, 140, "VMM initialized successfully");
+        } else {
+            kprintf(10, 140, "Failed to initialize VMM");
+            hcf();
+        }
         
         // Initialize IDT
         if (idt_init()) {
@@ -166,8 +171,16 @@ void kmain(void) {
         enable_interrupts();
         kprintf(10, 230, "Interrupts enabled - system is fully operational");
         
-        // Skip VMM tests since VMM is not fully initialized
-        kprintf(10, 245, "VMM tests skipped (VMM initialization bypassed)");
+        // Test VMM functionality
+        kprintf(10, 245, "Testing VMM...");
+        void *vmm_page = vmm_alloc_kernel_pages(2);
+        if (vmm_page) {
+            kprintf(10, 250, "VMM allocated 2 pages at: %p", vmm_page);
+            vmm_free_kernel_pages(vmm_page, 2);
+            kprintf(10, 255, "VMM pages freed successfully");
+        } else {
+            kprintf(10, 250, "VMM allocation failed");
+        }
         
         // Test timer properly
         kprintf(10, 260, "Testing timer... waiting 2 seconds");

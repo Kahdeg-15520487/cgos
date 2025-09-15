@@ -9,9 +9,27 @@ static vmm_t g_vmm = {0};
 // Static page tables for initial setup (before dynamic allocation)
 // This avoids the chicken-and-egg problem of needing memory allocation before VMM is ready
 static page_table_t static_pml4 __attribute__((aligned(PAGE_SIZE)));
-static page_table_t static_pdp[4] __attribute__((aligned(PAGE_SIZE)));  // Multiple PDP tables for different ranges
-static page_table_t static_pd[4] __attribute__((aligned(PAGE_SIZE)));   // Multiple PD tables
-static page_table_t static_pt[8] __attribute__((aligned(PAGE_SIZE)));   // Multiple PT tables
+static page_table_t static_pdp[8] __attribute__((aligned(PAGE_SIZE)));  // More PDP tables for better coverage
+static page_table_t static_pd[16] __attribute__((aligned(PAGE_SIZE)));  // More PD tables for identity mapping
+static page_table_t static_pt[8] __attribute__((aligned(PAGE_SIZE)));   // PT tables for detailed mapping
+
+// Tracking for static table usage
+static size_t static_pdp_used = 0;
+static size_t static_pd_used = 0;
+static size_t static_pt_used = 0;
+
+// Virtual address space management for kernel heap
+#define KERNEL_HEAP_SIZE (64 * 1024 * 1024)  // 64MB kernel heap
+#define MAX_HEAP_BLOCKS 256
+
+typedef struct {
+    uintptr_t virtual_addr;
+    size_t size;
+    bool is_free;
+} heap_block_t;
+
+static heap_block_t kernel_heap_blocks[MAX_HEAP_BLOCKS];
+static bool heap_initialized = false;
 
 // External assembly function to enable paging and load CR3
 extern void vmm_load_page_directory(uintptr_t pml4_physical);
@@ -19,6 +37,9 @@ extern void vmm_load_page_directory(uintptr_t pml4_physical);
 // Internal helper functions
 static page_table_t *vmm_get_or_create_table(page_table_t *parent, size_t index, uint64_t flags);
 static void vmm_invalidate_page(uintptr_t virtual_addr);
+static bool vmm_init_kernel_heap(void);
+static uintptr_t vmm_alloc_virtual_pages(size_t count);
+static void vmm_free_virtual_pages(uintptr_t virtual_addr, size_t count);
 
 bool vmm_init(void) {
     DEBUG_INFO("Initializing Virtual Memory Manager");
@@ -37,7 +58,29 @@ bool vmm_init(void) {
     g_vmm.kernel_pml4_phys = (uintptr_t)g_vmm.pml4;
     g_vmm.paging_enabled = false;
     
-    DEBUG_INFO("VMM initialized with PML4 at physical address: %p", (void*)g_vmm.kernel_pml4_phys);
+    // Set up initial identity mappings for low memory (needed for kernel operation)
+    if (!vmm_setup_initial_mappings()) {
+        DEBUG_ERROR("Failed to set up initial identity mappings");
+        return false;
+    }
+    
+    // TODO: Temporarily disable paging enable to debug crash
+    DEBUG_INFO("Skipping paging enable for debugging - page tables set up but paging not enabled");
+    /*
+    // Enable paging to activate virtual memory
+    if (!vmm_enable_paging()) {
+        DEBUG_ERROR("Failed to enable paging");
+        return false;
+    }
+    */
+    
+    // Initialize kernel heap virtual address management
+    if (!vmm_init_kernel_heap()) {
+        DEBUG_ERROR("Failed to initialize kernel heap");
+        return false;
+    }
+    
+    DEBUG_INFO("VMM fully initialized with paging enabled at PML4 %p", (void*)g_vmm.kernel_pml4_phys);
     return true;
 }
 
@@ -248,41 +291,144 @@ bool vmm_enable_paging(void) {
 }
 
 void *vmm_alloc_kernel_pages(size_t count) {
-    // Allocate physical pages
-    void *physical_pages = physical_alloc_pages(count);
-    if (!physical_pages) {
+    DEBUG_INFO("Allocating %zu kernel pages", count);
+    
+    // If paging is not enabled, fall back to simple physical allocation
+    if (!g_vmm.paging_enabled) {
+        DEBUG_INFO("Paging not enabled - using physical allocation fallback");
+        void *physical_pages = physical_alloc_pages(count);
+        if (physical_pages) {
+            DEBUG_INFO("Allocated %zu pages at physical %p", count, physical_pages);
+        }
+        return physical_pages;
+    }
+    
+    // Step 1: Allocate virtual address space
+    uintptr_t virtual_addr = vmm_alloc_virtual_pages(count);
+    if (!virtual_addr) {
+        DEBUG_ERROR("Failed to allocate virtual address space");
         return NULL;
     }
     
-    // For now, return the physical address directly (identity mapped)
-    // TODO: Implement proper kernel heap virtual addressing
-    return physical_pages;
+    // Step 2: Allocate physical pages
+    void *physical_pages = physical_alloc_pages(count);
+    if (!physical_pages) {
+        DEBUG_ERROR("Failed to allocate physical pages");
+        vmm_free_virtual_pages(virtual_addr, count);
+        return NULL;
+    }
+    
+    // Step 3: Map virtual pages to physical pages
+    uintptr_t phys_addr = (uintptr_t)physical_pages;
+    for (size_t i = 0; i < count; i++) {
+        uintptr_t virt_page = virtual_addr + (i * PAGE_SIZE);
+        uintptr_t phys_page = phys_addr + (i * PAGE_SIZE);
+        
+        if (!vmm_map_page(virt_page, phys_page, PTE_PRESENT | PTE_WRITABLE)) {
+            DEBUG_ERROR("Failed to map virtual page %p to physical page %p", 
+                       (void*)virt_page, (void*)phys_page);
+            
+            // Clean up any mappings we've already created
+            for (size_t j = 0; j < i; j++) {
+                vmm_unmap_page(virtual_addr + (j * PAGE_SIZE));
+            }
+            physical_free_pages(physical_pages, count);
+            vmm_free_virtual_pages(virtual_addr, count);
+            return NULL;
+        }
+    }
+    
+    DEBUG_INFO("Successfully allocated %zu kernel pages at virtual %p (physical %p)", 
+               count, (void*)virtual_addr, physical_pages);
+    return (void*)virtual_addr;
 }
 
 void vmm_free_kernel_pages(void *virtual_addr, size_t count) {
-    // For now, free the physical pages directly
-    // TODO: Implement proper virtual address translation
-    physical_free_pages(virtual_addr, count);
+    if (!virtual_addr) {
+        return;
+    }
+    
+    // If paging is not enabled, fall back to simple physical free
+    if (!g_vmm.paging_enabled) {
+        DEBUG_INFO("Paging not enabled - using physical free fallback");
+        physical_free_pages(virtual_addr, count);
+        return;
+    }
+    
+    uintptr_t virt_addr = (uintptr_t)virtual_addr;
+    DEBUG_INFO("Freeing %zu kernel pages at virtual %p", count, virtual_addr);
+    
+    // Step 1: Get physical addresses and unmap virtual pages
+    uintptr_t first_phys_addr = 0;
+    for (size_t i = 0; i < count; i++) {
+        uintptr_t virt_page = virt_addr + (i * PAGE_SIZE);
+        uintptr_t phys_page = vmm_get_physical_address(virt_page);
+        
+        if (i == 0) {
+            first_phys_addr = phys_page;
+        }
+        
+        if (!vmm_unmap_page(virt_page)) {
+            DEBUG_ERROR("Failed to unmap virtual page %p", (void*)virt_page);
+        }
+    }
+    
+    // Step 2: Free physical pages
+    if (first_phys_addr) {
+        physical_free_pages((void*)first_phys_addr, count);
+    }
+    
+    // Step 3: Free virtual address space
+    vmm_free_virtual_pages(virt_addr, count);
+    
+    DEBUG_INFO("Successfully freed %zu kernel pages", count);
 }
 
 // Internal helper functions
 
-// Track which static tables we've used
-static size_t static_pdp_used = 0;
-static size_t static_pd_used = 0;
-static size_t static_pt_used = 0;
-
 static page_table_t *vmm_get_or_create_table(page_table_t *parent, size_t index, uint64_t flags) {
-    DEBUG_INFO("Checking if entry %zu exists in parent table %p", index, parent);
-    DEBUG_INFO("Parent entry[%zu] = 0x%lx", index, parent->entries[index]);
+    // Add safety checks
+    if (!parent) {
+        DEBUG_ERROR("Parent table is NULL!");
+        return NULL;
+    }
+    if (index >= 512) {
+        DEBUG_ERROR("Index %zu is out of range (max 511)", index);
+        return NULL;
+    }
     
-    if (parent->entries[index] & PTE_PRESENT) {
-        // Table already exists, return it
-        uint64_t entry_raw = parent->entries[index];
-        uintptr_t addr = PTE_GET_ADDR(entry_raw);
-        page_table_t *existing = (page_table_t *)addr;
-        DEBUG_INFO("Table already exists: entry=0x%lx, addr=0x%lx, ptr=%p", entry_raw, addr, existing);
-        return existing;
+    DEBUG_INFO("Checking if entry %zu exists in parent table %p", index, parent);
+    
+    // Debug: Print static table addresses for reference
+    DEBUG_INFO("Static table addresses: PML4=%p, PDP=%p, PD=%p, PT=%p", 
+               &static_pml4, &static_pdp[0], &static_pd[0], &static_pt[0]);
+    
+    // Add basic null check
+    if (!parent) {
+        DEBUG_ERROR("Parent table is NULL!");
+        return NULL;
+    }
+    
+    DEBUG_INFO("About to read parent->entries[%zu] from parent table %p", index, parent);
+    uint64_t parent_entry = parent->entries[index];
+    DEBUG_INFO("Successfully read parent entry[%zu] = 0x%lx", index, parent_entry);
+    
+    if (parent_entry & PTE_PRESENT) {
+        // Table already exists - but there's a memory corruption issue with reuse
+        uintptr_t addr = PTE_GET_ADDR(parent_entry);
+        DEBUG_INFO("Found existing table: entry=0x%lx, extracted addr=0x%lx", parent_entry, addr);
+        
+        // TEMPORARY: Only reuse PD and PT tables, not PDP tables
+        // Check if this is a PDP table reuse (parent is PML4)
+        if (parent == &static_pml4) {
+            DEBUG_INFO("This is PDP table reuse - SKIPPING due to memory corruption issue");
+            // Fall through to create new table instead
+        } else {
+            // This is PD or PT table reuse - should be safer
+            page_table_t *existing = (page_table_t *)addr;
+            DEBUG_INFO("Reusing non-PDP table at %p", existing);
+            return existing;
+        }
     }
     
     DEBUG_INFO("Entry not present, need to create new table");
@@ -290,18 +436,18 @@ static page_table_t *vmm_get_or_create_table(page_table_t *parent, size_t index,
     page_table_t *new_table = NULL;
     
     // Use static tables for initial setup to avoid allocation issues
-    if (parent == &static_pml4 && static_pdp_used < 4) {
+    if (parent == &static_pml4 && static_pdp_used < 8) {
         new_table = &static_pdp[static_pdp_used];
         static_pdp_used++;
-        DEBUG_INFO("Using static PDP table");
-    } else if ((parent >= &static_pdp[0] && parent <= &static_pdp[3]) && static_pd_used < 4) {
+        DEBUG_INFO("Using static PDP table %zu/8", static_pdp_used);
+    } else if ((parent >= &static_pdp[0] && parent <= &static_pdp[7]) && static_pd_used < 16) {
         new_table = &static_pd[static_pd_used];
         static_pd_used++;
-        DEBUG_INFO("Using static PD table");
-    } else if ((parent >= &static_pd[0] && parent <= &static_pd[3]) && static_pt_used < 8) {
+        DEBUG_INFO("Using static PD table %zu/16", static_pd_used);
+    } else if ((parent >= &static_pd[0] && parent <= &static_pd[15]) && static_pt_used < 8) {
         new_table = &static_pt[static_pt_used];
         static_pt_used++;
-        DEBUG_INFO("Using static PT table");
+        DEBUG_INFO("Using static PT table %zu/8", static_pt_used);
     } else {
         // Fallback to dynamic allocation (for later use)
         DEBUG_INFO("Attempting dynamic allocation for page table");
@@ -314,9 +460,12 @@ static page_table_t *vmm_get_or_create_table(page_table_t *parent, size_t index,
     
     DEBUG_INFO("Allocated new page table at %p", new_table);
     
-    // Clear the new table
-    memset(new_table, 0, sizeof(page_table_t));
-    DEBUG_INFO("Cleared new page table");
+    // Clear the new table - do it manually instead of using memset
+    DEBUG_INFO("About to clear new page table at %p", new_table);
+    for (int i = 0; i < 512; i++) {
+        new_table->entries[i] = 0;
+    }
+    DEBUG_INFO("Manually cleared new page table");
     
     // Add entry to parent table
     // For now, assume identity mapping since we're setting up initial mappings
@@ -335,13 +484,13 @@ static void vmm_invalidate_page(uintptr_t virtual_addr) {
 bool vmm_setup_initial_mappings(void) {
     DEBUG_INFO("Setting up initial identity mappings");
     
-    // Start with just the first 16KB for low memory
-    DEBUG_INFO("Mapping first 16KB (4 pages) for low memory");
-    if (!vmm_identity_map_range(0x0, 0x4000, PTE_PRESENT | PTE_WRITABLE)) {
-        DEBUG_ERROR("Failed to identity map first 16KB");
+    // Test with 2 pages to isolate the crash
+    DEBUG_INFO("Mapping 2 pages (8KB) for debugging");
+    if (!vmm_identity_map_range(0x0, 0x2000, PTE_PRESENT | PTE_WRITABLE)) {
+        DEBUG_ERROR("Failed to identity map 2 pages");
         return false;
     }
-    DEBUG_INFO("Successfully mapped first 16KB");
+    DEBUG_INFO("Successfully mapped 2 pages");
     
     DEBUG_INFO("Initial identity mappings completed successfully");
     return true;
@@ -375,4 +524,101 @@ bool vmm_setup_initial_mappings_with_kernel(uintptr_t kernel_virt_base, uintptr_
     
     DEBUG_INFO("Initial identity mappings with kernel completed successfully");
     return true;
+}
+
+// Kernel heap management functions
+
+static bool vmm_init_kernel_heap(void) {
+    DEBUG_INFO("Initializing kernel heap virtual address space");
+    
+    // Initialize all heap blocks as free
+    for (int i = 0; i < MAX_HEAP_BLOCKS; i++) {
+        kernel_heap_blocks[i].virtual_addr = 0;
+        kernel_heap_blocks[i].size = 0;
+        kernel_heap_blocks[i].is_free = true;
+    }
+    
+    // Create an initial large free block covering the entire heap space
+    kernel_heap_blocks[0].virtual_addr = KERNEL_HEAP_BASE;
+    kernel_heap_blocks[0].size = KERNEL_HEAP_SIZE;
+    kernel_heap_blocks[0].is_free = true;
+    
+    heap_initialized = true;
+    DEBUG_INFO("Kernel heap initialized: base=%p, size=%zu MB", 
+               (void*)KERNEL_HEAP_BASE, KERNEL_HEAP_SIZE / (1024 * 1024));
+    return true;
+}
+
+static uintptr_t vmm_alloc_virtual_pages(size_t count) {
+    if (!heap_initialized) {
+        DEBUG_ERROR("Kernel heap not initialized");
+        return 0;
+    }
+    
+    size_t needed_size = count * PAGE_SIZE;
+    DEBUG_INFO("Looking for %zu virtual pages (%zu bytes)", count, needed_size);
+    
+    // Find a free block large enough
+    for (int i = 0; i < MAX_HEAP_BLOCKS; i++) {
+        if (kernel_heap_blocks[i].is_free && kernel_heap_blocks[i].size >= needed_size) {
+            uintptr_t allocated_addr = kernel_heap_blocks[i].virtual_addr;
+            
+            // If block is exactly the right size, mark it as used
+            if (kernel_heap_blocks[i].size == needed_size) {
+                kernel_heap_blocks[i].is_free = false;
+                DEBUG_INFO("Allocated virtual pages at %p (exact fit)", (void*)allocated_addr);
+                return allocated_addr;
+            }
+            
+            // Otherwise, split the block
+            // Find a free slot for the remaining part
+            for (int j = 0; j < MAX_HEAP_BLOCKS; j++) {
+                if (kernel_heap_blocks[j].virtual_addr == 0) {  // Empty slot
+                    // Set up the remaining free block
+                    kernel_heap_blocks[j].virtual_addr = allocated_addr + needed_size;
+                    kernel_heap_blocks[j].size = kernel_heap_blocks[i].size - needed_size;
+                    kernel_heap_blocks[j].is_free = true;
+                    
+                    // Update the allocated block
+                    kernel_heap_blocks[i].size = needed_size;
+                    kernel_heap_blocks[i].is_free = false;
+                    
+                    DEBUG_INFO("Allocated virtual pages at %p (split block)", (void*)allocated_addr);
+                    return allocated_addr;
+                }
+            }
+            
+            DEBUG_ERROR("No free heap block slots available for splitting");
+            return 0;
+        }
+    }
+    
+    DEBUG_ERROR("No suitable free virtual address space found");
+    return 0;
+}
+
+static void vmm_free_virtual_pages(uintptr_t virtual_addr, size_t count) {
+    if (!heap_initialized) {
+        DEBUG_ERROR("Kernel heap not initialized");
+        return;
+    }
+    
+    size_t size = count * PAGE_SIZE;
+    DEBUG_INFO("Freeing %zu virtual pages at %p", count, (void*)virtual_addr);
+    
+    // Find the block to free
+    for (int i = 0; i < MAX_HEAP_BLOCKS; i++) {
+        if (kernel_heap_blocks[i].virtual_addr == virtual_addr && 
+            kernel_heap_blocks[i].size == size && 
+            !kernel_heap_blocks[i].is_free) {
+            
+            kernel_heap_blocks[i].is_free = true;
+            DEBUG_INFO("Freed virtual pages at %p", (void*)virtual_addr);
+            
+            // TODO: Implement block coalescing to merge adjacent free blocks
+            return;
+        }
+    }
+    
+    DEBUG_ERROR("Virtual address %p not found in allocation table", (void*)virtual_addr);
 }
