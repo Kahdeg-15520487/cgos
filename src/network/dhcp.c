@@ -153,6 +153,7 @@ int dhcp_client_discover(dhcp_client_t *client) {
 
 int dhcp_client_request(dhcp_client_t *client) {
     if (!client || !client->iface || client->offered_ip == 0) {
+        DEBUG_WARN("DHCP REQUEST: Invalid parameters\\n");
         return -1;
     }
     
@@ -201,6 +202,23 @@ int dhcp_client_request(dhcp_client_t *client) {
     // End option
     dhcp_add_option(packet.options, &opt_offset, DHCP_OPTION_END, 0, NULL);
     
+    // Calculate total packet size
+    size_t packet_size = sizeof(dhcp_packet_t) - sizeof(packet.options) + opt_offset + 1;
+    
+    // Send UDP packet to broadcast address (255.255.255.255:67)
+    int result = udp_send_packet(client->iface, 
+                                  0xFFFFFFFF,  // Broadcast: 255.255.255.255
+                                  68,          // Source port: DHCP client
+                                  67,          // Dest port: DHCP server
+                                  &packet, 
+                                  packet_size);
+    
+    if (result < 0) {
+        DEBUG_ERROR("DHCP: Failed to send REQUEST packet\\n");
+        return -1;
+    }
+    
+    DEBUG_INFO("DHCP: Sent REQUEST packet (%zu bytes)\\n", packet_size);
     client->state = DHCP_STATE_REQUESTING;
     return 0;
 }
@@ -289,12 +307,32 @@ int dhcp_parse_options(uint8_t *options, size_t len, dhcp_client_t *client, uint
 }
 
 void dhcp_client_process_packet(dhcp_client_t *client, dhcp_packet_t *packet, size_t packet_len) {
-    if (!client || !packet || packet_len < sizeof(dhcp_packet_t) - 312) {
+    DEBUG_INFO("DHCP: Processing received packet (len=%zu)\\n", packet_len);
+    
+    if (!client || !packet) {
+        DEBUG_WARN("DHCP: Invalid client or packet pointer\\n");
         return;
     }
     
-    // Check if this packet is for us
-    if (ntohl(packet->xid) != client->transaction_id) {
+    // Minimum DHCP packet size check (header without full options)
+    if (packet_len < 240) {  // DHCP header is 236 bytes + 4 bytes magic cookie minimum
+        DEBUG_WARN("DHCP: Packet too small (%zu bytes)\\n", packet_len);
+        return;
+    }
+    
+    // Check magic cookie
+    uint32_t magic = ntohl(packet->magic);
+    DEBUG_DEBUG("DHCP: Magic cookie = 0x%08x (expected 0x63825363)\\n", magic);
+    if (magic != 0x63825363) {
+        DEBUG_WARN("DHCP: Invalid magic cookie\\n");
+        return;
+    }
+    
+    // Check if this packet is for us (XID match)
+    uint32_t pkt_xid = ntohl(packet->xid);
+    DEBUG_DEBUG("DHCP: Packet XID=0x%08x, our XID=0x%08x\\n", pkt_xid, client->transaction_id);
+    if (pkt_xid != client->transaction_id) {
+        DEBUG_WARN("DHCP: XID mismatch\\n");
         return;
     }
     
@@ -302,19 +340,34 @@ void dhcp_client_process_packet(dhcp_client_t *client, dhcp_packet_t *packet, si
     uint8_t msg_type = 0;
     dhcp_parse_options(packet->options, 312, client, &msg_type);
     
+    DEBUG_INFO("DHCP: Received message type=%d, client state=%d\\n", msg_type, client->state);
+    
+    // Get offered IP address
+    uint32_t offered_ip = ntohl(packet->yiaddr);
+    DEBUG_INFO("DHCP: Offered IP = %d.%d.%d.%d\\n",
+               (offered_ip >> 24) & 0xFF, (offered_ip >> 16) & 0xFF,
+               (offered_ip >> 8) & 0xFF, offered_ip & 0xFF);
+    
     switch (client->state) {
         case DHCP_STATE_SELECTING:
             if (msg_type == DHCP_OFFER) {
+                DEBUG_INFO("DHCP: Received OFFER! IP=%d.%d.%d.%d\\n",
+                          (offered_ip >> 24) & 0xFF, (offered_ip >> 16) & 0xFF,
+                          (offered_ip >> 8) & 0xFF, offered_ip & 0xFF);
                 // Save offered IP and server info
-                client->offered_ip = ntohl(packet->yiaddr);
+                client->offered_ip = offered_ip;
                 
                 // Send DHCP REQUEST
+                DEBUG_INFO("DHCP: Sending REQUEST...\\n");
                 dhcp_client_request(client);
+            } else {
+                DEBUG_WARN("DHCP: Expected OFFER (type=2), got type=%d\\n", msg_type);
             }
             break;
             
         case DHCP_STATE_REQUESTING:
             if (msg_type == DHCP_ACK) {
+                DEBUG_INFO("DHCP: Received ACK! Configuration complete.\\n");
                 // Configuration accepted
                 client->iface->ip_address = client->offered_ip;
                 client->iface->subnet_mask = client->subnet_mask;
@@ -322,6 +375,10 @@ void dhcp_client_process_packet(dhcp_client_t *client, dhcp_packet_t *packet, si
                 client->state = DHCP_STATE_BOUND;
                 client->lease_start_time = dhcp_time;
                 client->active = true;
+                
+                DEBUG_INFO("DHCP: Assigned IP=%d.%d.%d.%d\\n",
+                          (client->offered_ip >> 24) & 0xFF, (client->offered_ip >> 16) & 0xFF,
+                          (client->offered_ip >> 8) & 0xFF, client->offered_ip & 0xFF);
                 
                 // If renewal time not specified, use 50% of lease time
                 if (client->renewal_time == 0) {
@@ -333,6 +390,7 @@ void dhcp_client_process_packet(dhcp_client_t *client, dhcp_packet_t *packet, si
                     client->rebinding_time = (client->lease_time * 7) / 8;
                 }
             } else if (msg_type == DHCP_NAK) {
+                DEBUG_WARN("DHCP: Received NAK - configuration rejected\\n");
                 // Configuration rejected, start over
                 client->state = DHCP_STATE_INIT;
                 client->offered_ip = 0;
@@ -341,6 +399,7 @@ void dhcp_client_process_packet(dhcp_client_t *client, dhcp_packet_t *packet, si
             break;
             
         default:
+            DEBUG_WARN("DHCP: Unexpected state %d for incoming packet\\n", client->state);
             break;
     }
 }

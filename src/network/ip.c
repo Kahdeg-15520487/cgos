@@ -5,6 +5,7 @@
 #include "tcp.h"
 #include "icmp.h"
 #include "../memory/memory.h"
+#include "../debug/debug.h"
 
 static uint16_t ip_identification = 1;
 
@@ -71,11 +72,13 @@ void ip_process_packet(network_interface_t *iface, ip_packet_t *packet) {
     // Validate IP header
     uint8_t version = (packet->header.version_ihl >> 4) & 0x0F;
     if (version != IP_VERSION_4) {
+        DEBUG_WARN("IP: Not IPv4 (version=%d)\n", version);
         return; // Not IPv4
     }
 
     // Validate checksum
     if (!ip_validate_checksum(&packet->header)) {
+        DEBUG_WARN("IP: Invalid checksum\n");
         return; // Invalid checksum
     }
 
@@ -84,9 +87,32 @@ void ip_process_packet(network_interface_t *iface, ip_packet_t *packet) {
     uint32_t dest_ip = __builtin_bswap32(packet->header.dest_ip);
 
     // Check if packet is for us
-    if (dest_ip != iface->ip_address) {
+    // Accept if:
+    // 1. Destination matches our IP
+    // 2. Destination is broadcast (255.255.255.255)
+    // 3. We have no IP yet (0.0.0.0) - needed for DHCP
+    // 4. Destination is subnet broadcast
+    bool is_broadcast = (dest_ip == 0xFFFFFFFF);
+    bool is_for_us = (dest_ip == iface->ip_address);
+    bool waiting_for_dhcp = (iface->ip_address == 0);
+    bool is_subnet_broadcast = (iface->subnet_mask != 0 && 
+                                 (dest_ip | iface->subnet_mask) == 0xFFFFFFFF);
+    
+    if (!is_for_us && !is_broadcast && !waiting_for_dhcp && !is_subnet_broadcast) {
+        DEBUG_DEBUG("IP: Packet not for us (dest=%d.%d.%d.%d, our_ip=%d.%d.%d.%d)\n",
+                   (dest_ip >> 24) & 0xFF, (dest_ip >> 16) & 0xFF,
+                   (dest_ip >> 8) & 0xFF, dest_ip & 0xFF,
+                   (iface->ip_address >> 24) & 0xFF, (iface->ip_address >> 16) & 0xFF,
+                   (iface->ip_address >> 8) & 0xFF, iface->ip_address & 0xFF);
         return; // Not for us
     }
+
+    DEBUG_DEBUG("IP: Processing packet (proto=%d, src=%d.%d.%d.%d, dest=%d.%d.%d.%d)\n",
+               packet->header.protocol,
+               (src_ip >> 24) & 0xFF, (src_ip >> 16) & 0xFF,
+               (src_ip >> 8) & 0xFF, src_ip & 0xFF,
+               (dest_ip >> 24) & 0xFF, (dest_ip >> 16) & 0xFF,
+               (dest_ip >> 8) & 0xFF, dest_ip & 0xFF);
 
     // Process based on protocol
     switch (packet->header.protocol) {

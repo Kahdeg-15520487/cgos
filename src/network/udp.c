@@ -1,6 +1,8 @@
 #include "udp.h"
 #include "ip.h"
+#include "dhcp.h"
 #include "../memory/memory.h"
+#include "../debug/debug.h"
 
 static udp_socket_t sockets[MAX_SOCKETS];
 static int socket_count = 0;
@@ -58,11 +60,26 @@ void udp_process_packet(network_interface_t *iface, uint32_t src_ip, uint32_t de
     uint16_t dest_port = __builtin_bswap16(packet->header.dest_port);
     uint16_t length = __builtin_bswap16(packet->header.length);
 
+    DEBUG_DEBUG("UDP packet received: src_port=%d dest_port=%d len=%d\n", src_port, dest_port, length);
+
     if (length < UDP_HEADER_LEN) {
+        DEBUG_WARN("UDP: Invalid packet length %d\n", length);
         return; // Invalid packet
     }
 
     size_t payload_len = length - UDP_HEADER_LEN;
+
+    // Special handling for DHCP packets (server port 67 -> client port 68)
+    if (dest_port == 68 && src_port == 67) {
+        DEBUG_INFO("UDP: DHCP packet received, forwarding to DHCP client\n");
+        dhcp_client_t *client = dhcp_get_client(iface);
+        if (client) {
+            dhcp_client_process_packet(client, (dhcp_packet_t *)packet->payload, payload_len);
+        } else {
+            DEBUG_WARN("UDP: No DHCP client for interface\n");
+        }
+        return;
+    }
 
     // Find socket listening on destination port
     for (int i = 0; i < MAX_SOCKETS; i++) {

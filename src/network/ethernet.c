@@ -2,6 +2,7 @@
 #include "arp.h"
 #include "ip.h"
 #include "../memory/memory.h"
+#include "../debug/debug.h"
 
 // Broadcast MAC address
 static const uint8_t broadcast_mac[ETH_ALEN] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
@@ -62,21 +63,30 @@ void ethernet_process_frame(network_interface_t *iface, ethernet_frame_t *frame)
     bool broadcast = ethernet_is_broadcast(frame->header.dest_mac);
     
     if (!for_us && !broadcast) {
+        DEBUG_DEBUG("Ethernet: Frame not for us (dest MAC: %02x:%02x:%02x:%02x:%02x:%02x)\n",
+                   frame->header.dest_mac[0], frame->header.dest_mac[1],
+                   frame->header.dest_mac[2], frame->header.dest_mac[3],
+                   frame->header.dest_mac[4], frame->header.dest_mac[5]);
         return; // Frame not for us
     }
+
+    DEBUG_DEBUG("Ethernet: Processing frame (ethertype=0x%04x, %s)\n", 
+               frame->header.ethertype, broadcast ? "broadcast" : "unicast");
 
     // Process based on ethertype
     switch (frame->header.ethertype) {
         case ETH_TYPE_ARP:
+            DEBUG_DEBUG("Ethernet: Forwarding to ARP handler\n");
             arp_process_packet(iface, (arp_header_t *)frame->payload);
             break;
             
         case ETH_TYPE_IP:
+            DEBUG_DEBUG("Ethernet: Forwarding to IP handler\n");
             ip_process_packet(iface, (ip_packet_t *)frame->payload);
             break;
             
         default:
-            // Unknown ethertype, ignore
+            DEBUG_DEBUG("Ethernet: Unknown ethertype 0x%04x, ignoring\n", frame->header.ethertype);
             break;
     }
 }
