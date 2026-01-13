@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Set up build environment
         run: |
-          bash setup.sh
+          audo bash setup.sh
       - name: Build Limine-bootable ISO
         run: |
           bash makeiso.sh
