@@ -44,7 +44,16 @@ int ip_send_packet(network_interface_t *iface, uint32_t dest_ip, uint8_t protoco
     memcpy(packet.payload, payload, payload_len);
 
     // Resolve destination MAC address
-    if (!arp_lookup(dest_ip, dest_mac)) {
+    // For broadcast address, use broadcast MAC directly
+    if (dest_ip == 0xFFFFFFFF) {
+        // Broadcast - use FF:FF:FF:FF:FF:FF
+        dest_mac[0] = 0xFF;
+        dest_mac[1] = 0xFF;
+        dest_mac[2] = 0xFF;
+        dest_mac[3] = 0xFF;
+        dest_mac[4] = 0xFF;
+        dest_mac[5] = 0xFF;
+    } else if (!arp_lookup(dest_ip, dest_mac)) {
         // MAC not in ARP table, send ARP request
         arp_send_request(iface, dest_ip);
         return NET_TIMEOUT; // Would need to queue packet in real implementation
@@ -128,16 +137,77 @@ bool ip_validate_checksum(ip_header_t *header) {
 }
 
 uint32_t ip_str_to_addr(const char *ip_str) {
-    // Simple implementation - would need proper parsing in real system
-    // For now, return a placeholder
-    return 0;
+    if (!ip_str) {
+        return 0;
+    }
+    
+    uint32_t octets[4] = {0};
+    int octet_idx = 0;
+    uint32_t current = 0;
+    
+    for (const char *p = ip_str; *p != '\0' && octet_idx < 4; p++) {
+        if (*p >= '0' && *p <= '9') {
+            current = current * 10 + (*p - '0');
+            if (current > 255) {
+                return 0; // Invalid octet value
+            }
+        } else if (*p == '.') {
+            octets[octet_idx++] = current;
+            current = 0;
+        } else {
+            return 0; // Invalid character
+        }
+    }
+    
+    // Store last octet
+    if (octet_idx < 4) {
+        octets[octet_idx] = current;
+    }
+    
+    // Must have exactly 4 octets
+    if (octet_idx != 3) {
+        return 0;
+    }
+    
+    // Combine into 32-bit address (host byte order)
+    return (octets[0] << 24) | (octets[1] << 16) | (octets[2] << 8) | octets[3];
 }
 
 void ip_addr_to_str(uint32_t ip_addr, char *ip_str) {
-    // Simple implementation - would need proper formatting in real system
-    if (ip_str) {
-        ip_str[0] = '\0';
+    if (!ip_str) {
+        return;
     }
+    
+    uint8_t octets[4];
+    octets[0] = (ip_addr >> 24) & 0xFF;
+    octets[1] = (ip_addr >> 16) & 0xFF;
+    octets[2] = (ip_addr >> 8) & 0xFF;
+    octets[3] = ip_addr & 0xFF;
+    
+    // Format as "xxx.xxx.xxx.xxx"
+    char *p = ip_str;
+    for (int i = 0; i < 4; i++) {
+        uint8_t val = octets[i];
+        
+        // Write digits
+        if (val >= 100) {
+            *p++ = '0' + (val / 100);
+            val %= 100;
+            *p++ = '0' + (val / 10);
+            *p++ = '0' + (val % 10);
+        } else if (val >= 10) {
+            *p++ = '0' + (val / 10);
+            *p++ = '0' + (val % 10);
+        } else {
+            *p++ = '0' + val;
+        }
+        
+        // Add dot separator (except for last octet)
+        if (i < 3) {
+            *p++ = '.';
+        }
+    }
+    *p = '\0';
 }
 
 bool ip_is_local(network_interface_t *iface, uint32_t ip_addr) {

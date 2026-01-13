@@ -1,4 +1,14 @@
+#!/bin/bash
+set -e  # Exit on any error
+
+# Build the kernel
+echo "Building kernel..."
 make
+if [ $? -ne 0 ]; then
+    echo "ERROR: Build failed!"
+    exit 1
+fi
+echo "Build successful!"
 
 # Create a directory which will be our ISO root.
 mkdir -p iso_root

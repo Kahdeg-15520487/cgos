@@ -18,6 +18,10 @@ uint64_t max_line = 0;
 uint64_t max_column = 0;
 
 // Simple 8x8 font
+// Note: Using designated initializers with range initializer causes -Woverride-init warnings
+// This is expected behavior - we initialize all to empty, then override specific characters
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Woverride-init"
 static const uint8_t font[128][8] = {
     // Define the font here or include a font header file
     [0 ... 127] = {0x00}, // Default all characters to empty
@@ -117,6 +121,7 @@ static const uint8_t font[128][8] = {
     ['y'] = {0x00, 0x00, 0x42, 0x42, 0x46, 0x3A, 0x02, 0x3C},
     ['z'] = {0x00, 0x00, 0x7E, 0x04, 0x18, 0x20, 0x7E, 0x00}
 };
+#pragma GCC diagnostic pop
 
 void setup_graphic(volatile struct limine_framebuffer_request *framebuffer_request) {
     // Ensure we got a framebuffer.

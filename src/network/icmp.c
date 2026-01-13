@@ -89,6 +89,8 @@ int icmp_send_dest_unreachable(network_interface_t *iface, uint32_t dest_ip, uin
 }
 
 void icmp_process_packet(network_interface_t *iface, uint32_t src_ip, uint32_t dest_ip, icmp_packet_t *packet) {
+    (void)dest_ip; // Unused - packet already routed to us
+    
     if (!iface || !packet) {
         return;
     }

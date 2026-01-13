@@ -39,6 +39,12 @@ static volatile struct limine_memmap_request memmap_request = {
     .revision = 0
 };
 
+__attribute__((used, section(".limine_requests")))
+static volatile struct limine_hhdm_request hhdm_request = {
+    .id = LIMINE_HHDM_REQUEST,
+    .revision = 0
+};
+
 // Finally, define the start and end markers for the Limine requests.
 // These can also be moved anywhere, to any .c file, as seen fit.
 
@@ -104,14 +110,23 @@ void kmain(void) {
     if (physical_memory_init(memmap_request.response)) {
         kprintf(10, 110, "Physical memory manager initialized successfully");
         
+        // Initialize HHDM (Higher Half Direct Map) from Limine
+        if (hhdm_request.response == NULL) {
+            kprintf(10, 125, "ERROR: HHDM not available from bootloader");
+            DEBUG_ERROR("HHDM response is NULL - cannot continue\n");
+            hcf();
+        }
+        vmm_set_hhdm_offset(hhdm_request.response->offset);
+        kprintf(10, 125, "HHDM initialized successfully");
+        
         // Initialize virtual memory manager
-        kprintf(10, 125, "Initializing virtual memory manager...");
+        kprintf(10, 140, "Initializing virtual memory manager...");
         DEBUG_INFO("Starting virtual memory manager initialization\n");
         if (vmm_init() == 0) {
-            kprintf(10, 140, "Virtual memory manager initialized successfully");
+            kprintf(10, 155, "Virtual memory manager initialized successfully");
             DEBUG_INFO("Virtual memory manager initialization completed\n");
         } else {
-            kprintf(10, 140, "ERROR: Failed to initialize virtual memory manager");
+            kprintf(10, 155, "ERROR: Failed to initialize virtual memory manager");
             DEBUG_ERROR("Virtual memory manager initialization failed\n");
             hcf();
         }
@@ -342,8 +357,68 @@ void kmain(void) {
         kprintf(10, 540, "System continuing without network support");
     }
     
-    kprintf(10, 750, "System boot completed - OS ready");
-
-    // We're done, just hang...
-    hcf();
+    kprintf(10, 750, "System boot completed - entering main loop");
+    DEBUG_INFO("Entering main loop for packet processing\n");
+    
+    // Get ethernet interface for polling
+    network_interface_t *poll_iface = network_get_interface(1);
+    dhcp_client_t *poll_dhcp = poll_iface ? dhcp_get_client(poll_iface) : NULL;
+    
+    if (poll_iface) {
+        DEBUG_INFO("Polling interface: %s active=%d\n", poll_iface->name, poll_iface->active);
+    } else {
+        DEBUG_ERROR("No ethernet interface found for polling!\n");
+    }
+    
+    uint32_t loop_count = 0;
+    uint32_t last_ip = 0;
+    uint32_t dhcp_retry_counter = 0;
+    
+    // Main loop - poll for packets
+    while (1) {
+        // Process incoming packets on all interfaces
+        network_process_packets();
+        
+        // Update DHCP client state
+        if (poll_dhcp) {
+            dhcp_client_update(poll_dhcp);
+            
+            // Check if IP address changed (DHCP completed)
+            if (poll_iface->ip_address != 0 && poll_iface->ip_address != last_ip) {
+                last_ip = poll_iface->ip_address;
+                DEBUG_INFO("DHCP acquired IP: %d.%d.%d.%d\n",
+                           (poll_iface->ip_address >> 24) & 0xFF,
+                           (poll_iface->ip_address >> 16) & 0xFF,
+                           (poll_iface->ip_address >> 8) & 0xFF,
+                           poll_iface->ip_address & 0xFF);
+                
+                kprintf(10, 765, "IP acquired: %d.%d.%d.%d",
+                       (poll_iface->ip_address >> 24) & 0xFF,
+                       (poll_iface->ip_address >> 16) & 0xFF,
+                       (poll_iface->ip_address >> 8) & 0xFF,
+                       poll_iface->ip_address & 0xFF);
+            }
+            
+            // Resend DHCP DISCOVER periodically if we don't have an IP
+            dhcp_retry_counter++;
+            if (poll_iface->ip_address == 0 && dhcp_retry_counter % 100000 == 0) {
+                DEBUG_INFO("Resending DHCP DISCOVER (retry %u)...\n", dhcp_retry_counter / 100000);
+                dhcp_client_discover(poll_dhcp);
+            }
+        }
+        
+        // Periodically log that we're still running
+        loop_count++;
+        if (loop_count % 1000000 == 0) {
+            DEBUG_INFO("Main loop iteration %u (IP: %d.%d.%d.%d)\n", 
+                       loop_count / 1000000,
+                       poll_iface ? (poll_iface->ip_address >> 24) & 0xFF : 0,
+                       poll_iface ? (poll_iface->ip_address >> 16) & 0xFF : 0,
+                       poll_iface ? (poll_iface->ip_address >> 8) & 0xFF : 0,
+                       poll_iface ? poll_iface->ip_address & 0xFF : 0);
+        }
+        
+        // Small delay to avoid spinning too fast
+        for (volatile int i = 0; i < 1000; i++);
+    }
 }

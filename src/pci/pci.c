@@ -131,6 +131,9 @@ int pci_get_device_count(void) {
 }
 
 void pci_print_devices(int start_x, int start_y) {
+    (void)start_x; // Unused - now using debug console instead
+    (void)start_y; // Unused - now using debug console instead
+    
     DEBUG_INFO("=== PCI Device List ===\n");
     DEBUG_INFO("PCI Devices Found: %d\n", pci_device_count);
     

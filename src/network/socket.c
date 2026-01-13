@@ -102,6 +102,8 @@ int socket_bind(int sockfd, const sockaddr_t *addr, int addrlen) {
 }
 
 int socket_listen(int sockfd, int backlog) {
+    (void)backlog; // Unused parameter
+    
     socket_t *sock = get_socket(sockfd);
     if (!sock || sock->type != SOCK_STREAM || !sock->bound) {
         return -1;
@@ -119,6 +121,9 @@ int socket_listen(int sockfd, int backlog) {
 }
 
 int socket_accept(int sockfd, sockaddr_t *addr, int *addrlen) {
+    (void)addr;    // Unused parameter
+    (void)addrlen; // Unused parameter
+    
     socket_t *sock = get_socket(sockfd);
     if (!sock || sock->type != SOCK_STREAM || !sock->listening) {
         return -1;
@@ -159,6 +164,8 @@ int socket_connect(int sockfd, const sockaddr_t *addr, int addrlen) {
 }
 
 int socket_send(int sockfd, const void *buf, size_t len, int flags) {
+    (void)flags; // Unused parameter
+    
     socket_t *sock = get_socket(sockfd);
     if (!sock || !buf || len == 0) {
         return -1;
@@ -182,20 +189,39 @@ int socket_send(int sockfd, const void *buf, size_t len, int flags) {
 }
 
 int socket_recv(int sockfd, void *buf, size_t len, int flags) {
+    (void)flags; // Unused parameter
+    
     socket_t *sock = get_socket(sockfd);
     if (!sock || !buf || len == 0) {
         return -1;
     }
 
-    // This is a simplified implementation
-    // In a real system, this would block until data arrives
-    // For now, return error indicating no data available
+    switch (sock->type) {
+        case SOCK_DGRAM:
+            // UDP sockets use the recvfrom path or callbacks
+            // For recv on a connected UDP socket, we'd need a receive buffer
+            // This is a limitation - UDP data arrives via callbacks in udp_process_packet
+            return -1; // No data currently queued
+            
+        case SOCK_STREAM:
+            // TCP sockets would read from the connection's receive buffer
+            // This requires a receive buffer implementation in tcp_connection_t
+            if (sock->connected && sock->impl.tcp_connection) {
+                // In a full implementation, this would read from TCP receive buffer
+                // For now, return 0 to indicate no data ready (non-blocking behavior)
+                return 0;
+            }
+            break;
+    }
+
     return -1;
 }
 
 int socket_sendto(int sockfd, const void *buf, size_t len, int flags, const sockaddr_t *dest_addr, int addrlen) {
+    (void)flags; // Unused parameter
+    
     socket_t *sock = get_socket(sockfd);
-    if (!sock || !buf || len == 0 || !dest_addr || addrlen < sizeof(sockaddr_in_t)) {
+    if (!sock || !buf || len == 0 || !dest_addr || addrlen < (int)sizeof(sockaddr_in_t)) {
         return -1;
     }
 
@@ -211,6 +237,10 @@ int socket_sendto(int sockfd, const void *buf, size_t len, int flags, const sock
 }
 
 int socket_recvfrom(int sockfd, void *buf, size_t len, int flags, sockaddr_t *src_addr, int *addrlen) {
+    (void)flags;    // Unused parameter
+    (void)src_addr; // Unused parameter
+    (void)addrlen;  // Unused parameter
+    
     socket_t *sock = get_socket(sockfd);
     if (!sock || !buf || len == 0) {
         return -1;
@@ -247,16 +277,75 @@ int socket_close(int sockfd) {
 
 // Utility functions
 uint32_t inet_addr(const char *cp) {
-    // Simple implementation - parse "192.168.1.1" format
-    // This is a placeholder - implement proper parsing
-    return 0;
+    if (!cp) {
+        return 0xFFFFFFFF; // INADDR_NONE
+    }
+    
+    uint32_t octets[4] = {0};
+    int octet_idx = 0;
+    uint32_t current = 0;
+    
+    for (const char *p = cp; *p != '\0' && octet_idx < 4; p++) {
+        if (*p >= '0' && *p <= '9') {
+            current = current * 10 + (*p - '0');
+            if (current > 255) {
+                return 0xFFFFFFFF; // Invalid
+            }
+        } else if (*p == '.') {
+            octets[octet_idx++] = current;
+            current = 0;
+        } else {
+            return 0xFFFFFFFF; // Invalid character
+        }
+    }
+    
+    if (octet_idx < 4) {
+        octets[octet_idx] = current;
+    }
+    
+    if (octet_idx != 3) {
+        return 0xFFFFFFFF; // Invalid format
+    }
+    
+    // Return in network byte order
+    return htonl((octets[0] << 24) | (octets[1] << 16) | (octets[2] << 8) | octets[3]);
 }
 
 char *inet_ntoa(uint32_t addr) {
-    // Simple implementation - convert IP to string
-    // This is a placeholder - implement proper formatting
     static char buffer[16];
-    buffer[0] = '\0';
+    
+    // addr is in network byte order, convert to host order
+    uint32_t host_addr = ntohl(addr);
+    
+    uint8_t octets[4];
+    octets[0] = (host_addr >> 24) & 0xFF;
+    octets[1] = (host_addr >> 16) & 0xFF;
+    octets[2] = (host_addr >> 8) & 0xFF;
+    octets[3] = host_addr & 0xFF;
+    
+    // Format as "xxx.xxx.xxx.xxx"
+    char *p = buffer;
+    for (int i = 0; i < 4; i++) {
+        uint8_t val = octets[i];
+        
+        if (val >= 100) {
+            *p++ = '0' + (val / 100);
+            val %= 100;
+            *p++ = '0' + (val / 10);
+            *p++ = '0' + (val % 10);
+        } else if (val >= 10) {
+            *p++ = '0' + (val / 10);
+            *p++ = '0' + (val % 10);
+        } else {
+            *p++ = '0' + val;
+        }
+        
+        if (i < 3) {
+            *p++ = '.';
+        }
+    }
+    *p = '\0';
+    
     return buffer;
 }
 

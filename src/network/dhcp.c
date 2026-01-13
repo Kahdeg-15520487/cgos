@@ -3,6 +3,7 @@
 #include "udp.h"
 #include "ip.h"
 #include "ethernet.h"
+#include "../debug/debug.h"
 #include <stddef.h>
 
 // Magic cookie for DHCP packets
@@ -128,10 +129,24 @@ int dhcp_client_discover(dhcp_client_t *client) {
     // End option
     dhcp_add_option(packet.options, &opt_offset, DHCP_OPTION_END, 0, NULL);
     
-    // Send UDP packet to broadcast address
-    // This would normally use the UDP layer to send to 255.255.255.255:67
-    // For now, we'll simulate the process
+    // Calculate total packet size
+    size_t packet_size = sizeof(dhcp_packet_t) - sizeof(packet.options) + opt_offset + 1;
     
+    // Send UDP packet to broadcast address (255.255.255.255:67)
+    // DHCP client sends from port 68 to server port 67
+    int result = udp_send_packet(client->iface, 
+                                  0xFFFFFFFF,  // Broadcast: 255.255.255.255
+                                  68,          // Source port: DHCP client
+                                  67,          // Dest port: DHCP server
+                                  &packet, 
+                                  packet_size);
+    
+    if (result < 0) {
+        DEBUG_ERROR("DHCP: Failed to send DISCOVER packet\n");
+        return -1;
+    }
+    
+    DEBUG_INFO("DHCP: Sent DISCOVER packet (%zu bytes)\n", packet_size);
     client->state = DHCP_STATE_SELECTING;
     return 0;
 }

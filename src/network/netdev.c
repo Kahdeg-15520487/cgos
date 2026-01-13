@@ -3,8 +3,6 @@
 #include "../memory/memory.h"
 #include "../drivers/e1000.h"
 #include "../pci/pci.h"
-#include "../pci/pci.h"
-#include "../drivers/e1000.h"
 
 // Simple string functions for kernel
 static int netdev_strcmp(const char *s1, const char *s2) {
@@ -41,6 +39,8 @@ static packet_queue_t loopback_queue = {0};
 
 // Loopback device operations
 static int loopback_send(network_interface_t *iface, void *data, size_t len) {
+    (void)iface; // Unused - loopback uses global queue
+    
     if (!data || len == 0 || len > ETHERNET_FRAME_SIZE) {
         return NET_INVALID_PARAM;
     }
@@ -60,6 +60,8 @@ static int loopback_send(network_interface_t *iface, void *data, size_t len) {
 }
 
 static int loopback_receive(network_interface_t *iface, void *buffer, size_t max_len) {
+    (void)iface; // Unused - loopback uses global queue
+    
     if (!buffer || max_len == 0) {
         return NET_INVALID_PARAM;
     }
@@ -84,11 +86,13 @@ static int loopback_receive(network_interface_t *iface, void *buffer, size_t max
 }
 
 static int loopback_start(network_interface_t *iface) {
+    (void)iface; // Unused - loopback is always ready
     // Loopback is always ready
     return NET_SUCCESS;
 }
 
 static int loopback_stop(network_interface_t *iface) {
+    (void)iface; // Unused
     // Clear packet queue
     loopback_queue.head = 0;
     loopback_queue.tail = 0;
@@ -97,6 +101,7 @@ static int loopback_stop(network_interface_t *iface) {
 }
 
 static int loopback_init_dev(network_interface_t *iface) {
+    (void)iface; // Unused
     // Initialize loopback queue
     loopback_queue.head = 0;
     loopback_queue.tail = 0;
@@ -211,25 +216,15 @@ int loopback_init(void) {
                           );
 }
 
-// Ethernet interface operations for demo
+// Ethernet interface operations - connected to E1000 driver
 static int ethernet_send(network_interface_t *iface, void *data, size_t len) {
-    (void)iface; // Avoid unused parameter warning
-    (void)data;
-    (void)len;
-    
-    // In a real implementation, this would send data to actual ethernet hardware
-    // For now, just simulate success
-    return 0;
+    // Call E1000 driver to send the packet
+    return e1000_send_packet(iface, data, len);
 }
 
 static int ethernet_receive(network_interface_t *iface, void *buffer, size_t max_len) {
-    (void)iface; // Avoid unused parameter warning
-    (void)buffer;
-    (void)max_len;
-    
-    // In a real implementation, this would receive data from ethernet hardware
-    // For now, just return no data available
-    return 0;
+    // Call E1000 driver to receive a packet
+    return e1000_receive_packet(iface, buffer, max_len);
 }
 
 static int ethernet_start(network_interface_t *iface) {
@@ -240,17 +235,22 @@ static int ethernet_start(network_interface_t *iface) {
 }
 
 static int ethernet_stop(network_interface_t *iface) {
-    (void)iface; // Avoid unused parameter warning
-    
-    // Stop ethernet interface
+    if (iface) {
+        iface->active = false;
+    }
+    // E1000 driver handles its own state - just mark interface inactive
+    // In a full implementation, we would call e1000_disable_interrupts here
     return 0;
 }
 
 static int ethernet_init_dev(network_interface_t *iface) {
-    (void)iface; // Avoid unused parameter warning
-    
-    // Initialize ethernet device
-    return 0;
+    if (!iface) {
+        return NET_INVALID_PARAM;
+    }
+    // E1000 driver is already initialized by e1000_init() before netdev registration
+    // Just mark the interface as ready
+    iface->active = true;
+    return NET_SUCCESS;
 }
 
 static netdev_ops_t ethernet_ops = {

@@ -47,6 +47,8 @@ int udp_send_packet(network_interface_t *iface, uint32_t dest_ip, uint16_t src_p
 }
 
 void udp_process_packet(network_interface_t *iface, uint32_t src_ip, uint32_t dest_ip, udp_packet_t *packet) {
+    (void)dest_ip; // Unused parameter - packet already routed to us
+    
     if (!iface || !packet) {
         return;
     }

@@ -1,5 +1,6 @@
 #include "e1000.h"
 #include "../memory/memory.h"
+#include "../memory/pmm.h"
 #include "../memory/vmm.h"
 #include "../graphic/graphic.h"
 #include "../debug/debug.h"
@@ -7,13 +8,8 @@
 static e1000_device_t e1000_dev;
 static bool e1000_initialized = false;
 
-// Static allocation for E1000 descriptors and buffers
-static e1000_rx_desc_t rx_descriptors[E1000_NUM_RX_DESC] __attribute__((aligned(16)));
-static e1000_tx_desc_t tx_descriptors[E1000_NUM_TX_DESC] __attribute__((aligned(16)));
-static uint8_t rx_buffers[E1000_NUM_RX_DESC][E1000_BUFFER_SIZE] __attribute__((aligned(16)));
-static uint8_t tx_buffers[E1000_NUM_TX_DESC][E1000_BUFFER_SIZE] __attribute__((aligned(16)));
-static uint8_t *rx_buffer_ptrs[E1000_NUM_RX_DESC];
-static uint8_t *tx_buffer_ptrs[E1000_NUM_TX_DESC];
+// Note: Descriptors and buffers are allocated dynamically in e1000_rx_init/e1000_tx_init
+// using kmalloc for better memory management
 
 // Memory mapping for MMIO using virtual memory manager
 static void *map_physical_memory(uintptr_t phys_addr, size_t size) {
@@ -34,8 +30,14 @@ uint32_t e1000_read_reg(e1000_device_t *dev, uint32_t reg) {
         return 0xFFFFFFFF;
     }
     
-    volatile uint32_t *mmio = (volatile uint32_t *)(dev->mmio_base + reg);
-    return *mmio;
+    uintptr_t addr = dev->mmio_base + reg;
+    DEBUG_DEBUG("e1000_read_reg: addr=0x%lx\n", addr);
+    
+    volatile uint32_t *mmio = (volatile uint32_t *)addr;
+    uint32_t value = *mmio;
+    
+    DEBUG_DEBUG("e1000_read_reg: value=0x%08x\n", value);
+    return value;
 }
 
 void e1000_write_reg(e1000_device_t *dev, uint32_t reg, uint32_t value) {
@@ -52,17 +54,25 @@ void e1000_reset(e1000_device_t *dev) {
         return;
     }
     
+    DEBUG_INFO("E1000: Starting device reset...\n");
+    
     // Perform a global reset
     e1000_write_reg(dev, E1000_CTRL, E1000_CTRL_RST);
     
+    DEBUG_INFO("E1000: Reset command sent, waiting...\n");
+    
     // Wait for reset to complete (simple delay)
-    for (volatile int i = 0; i < 100000; i++); // Reduced delay
+    for (volatile int i = 0; i < 100000; i++);
+    
+    DEBUG_INFO("E1000: Disabling interrupts...\n");
     
     // Disable interrupts
     e1000_write_reg(dev, E1000_IMC, 0xFFFFFFFF);
     
     // Clear any pending interrupts
     (void)e1000_read_reg(dev, E1000_ICR);
+    
+    DEBUG_INFO("E1000: Reset complete\n");
 }
 
 void e1000_read_mac_address(e1000_device_t *dev) {
@@ -70,6 +80,8 @@ void e1000_read_mac_address(e1000_device_t *dev) {
     // For simplicity, we'll read from the RAL/RAH registers
     uint32_t ral = e1000_read_reg(dev, E1000_RAL);
     uint32_t rah = e1000_read_reg(dev, E1000_RAH);
+    
+    DEBUG_DEBUG("RAL=0x%08x RAH=0x%08x\n", ral, rah);
     
     dev->mac_address[0] = (ral >> 0) & 0xFF;
     dev->mac_address[1] = (ral >> 8) & 0xFF;
@@ -88,6 +100,7 @@ void e1000_read_mac_address(e1000_device_t *dev) {
     }
     
     if (all_zero) {
+        DEBUG_WARN("MAC address is all zeros, using default\n");
         // Set a default MAC address
         dev->mac_address[0] = 0x52;
         dev->mac_address[1] = 0x54;
@@ -111,42 +124,65 @@ int e1000_rx_init(e1000_device_t *dev) {
         return -1;
     }
     
-    // Allocate RX descriptor ring using kernel memory allocator
-    dev->rx_desc = (e1000_rx_desc_t *)kmalloc(sizeof(e1000_rx_desc_t) * E1000_NUM_RX_DESC);
-    if (!dev->rx_desc) {
+    DEBUG_INFO("E1000 RX: Allocating descriptor ring...\n");
+    
+    // Allocate RX descriptor ring using physical pages (DMA needs physical addresses)
+    // For DMA, we allocate physical pages and use them directly
+    void *rx_desc_phys = physical_alloc_page();
+    if (!rx_desc_phys) {
+        DEBUG_ERROR("E1000 RX: Failed to allocate descriptor ring\n");
         return -1;
     }
     
-    // Allocate RX buffers
-    dev->rx_buffers = (uint8_t **)kmalloc(sizeof(uint8_t *) * E1000_NUM_RX_DESC);
-    if (!dev->rx_buffers) {
-        kfree(dev->rx_desc);
+    // Access the descriptor ring via HHDM
+    dev->rx_desc = (e1000_rx_desc_t*)PHYS_TO_HHDM(rx_desc_phys);
+    memset(dev->rx_desc, 0, PAGE_SIZE);
+    
+    DEBUG_INFO("E1000 RX: Descriptor ring at phys=0x%lx virt=0x%lx\n", 
+               (uint64_t)rx_desc_phys, (uint64_t)dev->rx_desc);
+    
+    DEBUG_INFO("E1000 RX: Allocating buffer pointer array (%d entries, %zu bytes)...\n", 
+               E1000_NUM_RX_DESC, sizeof(uint8_t *) * E1000_NUM_RX_DESC);
+    
+    // Allocate buffer pointer array (use physical page + HHDM since kmalloc is broken)
+    void *buf_array_phys = physical_alloc_page();
+    if (!buf_array_phys) {
+        DEBUG_ERROR("E1000 RX: Failed to allocate buffer array\n");
         return -1;
     }
+    dev->rx_buffers = (uint8_t **)PHYS_TO_HHDM(buf_array_phys);
+    memset(dev->rx_buffers, 0, PAGE_SIZE);
+    
+    DEBUG_INFO("E1000 RX: Buffer pointer array at phys=0x%lx virt=0x%lx\n", 
+               (uint64_t)buf_array_phys, (uint64_t)dev->rx_buffers);
+    DEBUG_INFO("E1000 RX: Allocating %d packet buffers...\n", E1000_NUM_RX_DESC);
     
     // Initialize RX descriptors and buffers
     for (int i = 0; i < E1000_NUM_RX_DESC; i++) {
-        dev->rx_buffers[i] = (uint8_t *)kmalloc(E1000_BUFFER_SIZE);
-        if (!dev->rx_buffers[i]) {
-            // Clean up on failure
-            for (int j = 0; j < i; j++) {
-                kfree(dev->rx_buffers[j]);
-            }
-            kfree(dev->rx_buffers);
-            kfree(dev->rx_desc);
+        // Allocate physical page for each buffer (DMA needs physical addresses)
+        void *buf_phys = physical_alloc_page();
+        if (!buf_phys) {
+            DEBUG_ERROR("E1000 RX: Failed to allocate buffer %d\n", i);
             return -1;
         }
         
-        dev->rx_desc[i].buffer_addr = (uintptr_t)dev->rx_buffers[i];
+        // Store virtual address for kernel access
+        dev->rx_buffers[i] = (uint8_t *)PHYS_TO_HHDM(buf_phys);
+        
+        // Hardware descriptor uses PHYSICAL address
+        dev->rx_desc[i].buffer_addr = (uint64_t)buf_phys;
         dev->rx_desc[i].status = 0;
     }
     
     dev->rx_cur = 0;
     
-    // Set up RX registers only if MMIO is valid
+    DEBUG_INFO("E1000 RX: Setting up hardware registers...\n");
+    
+    // Set up RX registers with PHYSICAL addresses
     if (dev->mmio_base != 0) {
-        e1000_write_reg(dev, E1000_RDBAH, 0); // High 32 bits (assuming 32-bit system)
-        e1000_write_reg(dev, E1000_RDBAL, (uintptr_t)dev->rx_desc);
+        // Descriptor ring physical address (64-bit split into high/low)
+        e1000_write_reg(dev, E1000_RDBAH, 0); // High 32 bits (assuming < 4GB)
+        e1000_write_reg(dev, E1000_RDBAL, (uint32_t)(uintptr_t)rx_desc_phys);
         e1000_write_reg(dev, E1000_RDLEN, E1000_NUM_RX_DESC * sizeof(e1000_rx_desc_t));
         e1000_write_reg(dev, E1000_RDH, 0);
         e1000_write_reg(dev, E1000_RDT, E1000_NUM_RX_DESC - 1);
@@ -157,45 +193,65 @@ int e1000_rx_init(e1000_device_t *dev) {
         e1000_write_reg(dev, E1000_RCTL, rctl);
     }
     
+    DEBUG_INFO("E1000 RX: Initialization complete\n");
+    
     return 0;
 }
 
 int e1000_tx_init(e1000_device_t *dev) {
-    // Allocate TX descriptor ring using kernel memory allocator
-    dev->tx_desc = (e1000_tx_desc_t *)kmalloc(sizeof(e1000_tx_desc_t) * E1000_NUM_TX_DESC);
-    if (!dev->tx_desc) {
+    DEBUG_INFO("E1000 TX: Allocating descriptor ring...\n");
+    
+    // Allocate TX descriptor ring using physical pages (DMA needs physical addresses)
+    void *tx_desc_phys = physical_alloc_page();
+    if (!tx_desc_phys) {
+        DEBUG_ERROR("E1000 TX: Failed to allocate descriptor ring\n");
         return -1;
     }
     
-    // Allocate TX buffers
-    dev->tx_buffers = (uint8_t **)kmalloc(sizeof(uint8_t *) * E1000_NUM_TX_DESC);
-    if (!dev->tx_buffers) {
-        kfree(dev->tx_desc);
+    // Access the descriptor ring via HHDM
+    dev->tx_desc = (e1000_tx_desc_t*)PHYS_TO_HHDM(tx_desc_phys);
+    memset(dev->tx_desc, 0, PAGE_SIZE);
+    
+    DEBUG_INFO("E1000 TX: Descriptor ring at phys=0x%lx virt=0x%lx\n", 
+               (uint64_t)tx_desc_phys, (uint64_t)dev->tx_desc);
+    
+    // Allocate buffer pointer array (use physical page + HHDM since kmalloc is broken)
+    void *tx_buf_array_phys = physical_alloc_page();
+    if (!tx_buf_array_phys) {
+        DEBUG_ERROR("E1000 TX: Failed to allocate buffer array\n");
         return -1;
     }
+    dev->tx_buffers = (uint8_t **)PHYS_TO_HHDM(tx_buf_array_phys);
+    memset(dev->tx_buffers, 0, PAGE_SIZE);
+    
+    DEBUG_INFO("E1000 TX: Buffer pointer array at phys=0x%lx virt=0x%lx\n", 
+               (uint64_t)tx_buf_array_phys, (uint64_t)dev->tx_buffers);
+    DEBUG_INFO("E1000 TX: Allocating %d packet buffers...\n", E1000_NUM_TX_DESC);
     
     // Initialize TX descriptors and buffers
     for (int i = 0; i < E1000_NUM_TX_DESC; i++) {
-        dev->tx_buffers[i] = (uint8_t *)kmalloc(E1000_BUFFER_SIZE);
-        if (!dev->tx_buffers[i]) {
-            // Clean up on failure
-            for (int j = 0; j < i; j++) {
-                kfree(dev->tx_buffers[j]);
-            }
-            kfree(dev->tx_buffers);
-            kfree(dev->tx_desc);
+        // Allocate physical page for each buffer
+        void *buf_phys = physical_alloc_page();
+        if (!buf_phys) {
+            DEBUG_ERROR("E1000 TX: Failed to allocate buffer %d\n", i);
             return -1;
         }
         
-        dev->tx_desc[i].buffer_addr = (uintptr_t)dev->tx_buffers[i];
+        // Store virtual address for kernel access
+        dev->tx_buffers[i] = (uint8_t *)PHYS_TO_HHDM(buf_phys);
+        
+        // Hardware descriptor uses PHYSICAL address
+        dev->tx_desc[i].buffer_addr = (uint64_t)buf_phys;
         dev->tx_desc[i].status = E1000_TXD_STAT_DD; // Mark as done initially
     }
     
     dev->tx_cur = 0;
     
-    // Set up TX registers
-    e1000_write_reg(dev, E1000_TDBAH, 0); // High 32 bits (assuming 32-bit system)
-    e1000_write_reg(dev, E1000_TDBAL, (uintptr_t)dev->tx_desc);
+    DEBUG_INFO("E1000 TX: Setting up hardware registers...\n");
+    
+    // Set up TX registers with PHYSICAL addresses
+    e1000_write_reg(dev, E1000_TDBAH, 0);
+    e1000_write_reg(dev, E1000_TDBAL, (uint32_t)(uintptr_t)tx_desc_phys);
     e1000_write_reg(dev, E1000_TDLEN, E1000_NUM_TX_DESC * sizeof(e1000_tx_desc_t));
     e1000_write_reg(dev, E1000_TDH, 0);
     e1000_write_reg(dev, E1000_TDT, 0);
@@ -210,7 +266,11 @@ int e1000_tx_init(e1000_device_t *dev) {
 }
 
 int e1000_send_packet(network_interface_t *iface, void *data, size_t len) {
+    (void)iface; // Unused - uses global e1000_dev
+    
     if (!e1000_initialized || !data || len == 0 || len > E1000_BUFFER_SIZE) {
+        DEBUG_WARN("E1000 TX: Invalid params (init=%d, data=%p, len=%zu)\n", 
+                   e1000_initialized, data, len);
         return -1;
     }
     
@@ -218,6 +278,7 @@ int e1000_send_packet(network_interface_t *iface, void *data, size_t len) {
     
     // Check if current descriptor is available
     if (!(dev->tx_desc[dev->tx_cur].status & E1000_TXD_STAT_DD)) {
+        DEBUG_WARN("E1000 TX: Ring full at cur=%d\n", dev->tx_cur);
         return -1; // TX ring full
     }
     
@@ -234,10 +295,14 @@ int e1000_send_packet(network_interface_t *iface, void *data, size_t len) {
     dev->tx_cur = (dev->tx_cur + 1) % E1000_NUM_TX_DESC;
     e1000_write_reg(dev, E1000_TDT, dev->tx_cur);
     
+    DEBUG_INFO("E1000 TX: Sent packet len=%zu cur=%d->%d\n", len, old_cur, dev->tx_cur);
+    
     return len;
 }
 
 int e1000_receive_packet(network_interface_t *iface, void *buffer, size_t max_len) {
+    (void)iface; // Unused - uses global e1000_dev
+    
     if (!e1000_initialized || !buffer || max_len == 0) {
         return 0;
     }
@@ -249,13 +314,15 @@ int e1000_receive_packet(network_interface_t *iface, void *buffer, size_t max_le
         return 0; // No packet available
     }
     
-    // Get packet length
+    // We have a packet!
     uint16_t len = dev->rx_desc[dev->rx_cur].length;
+    DEBUG_INFO("E1000: Received packet! len=%d cur=%d\n", len, dev->rx_cur);
+    
     if (len > max_len) {
         len = max_len;
     }
     
-    // Copy packet data
+    // Copy packet data from the virtual address
     memcpy(buffer, dev->rx_buffers[dev->rx_cur], len);
     
     // Reset descriptor
@@ -316,39 +383,53 @@ int e1000_probe(pci_device_t *pci_dev) {
         void *mapped = map_physical_memory(physical_base, 0x20000);
         if (!mapped) {
             // MMIO mapping failed - no virtual memory management available
-            // Set mmio_base to 0 to indicate MMIO is disabled
+            DEBUG_ERROR("Failed to map MMIO region\n");
             e1000_dev.mmio_base = 0;
             return -1;
         }
         
-        // If we reach here, MMIO mapping succeeded
-        e1000_dev.mmio_base = physical_base;
+        // CRITICAL: Store the VIRTUAL address, not physical!
+        e1000_dev.mmio_base = (uintptr_t)mapped;
+        DEBUG_INFO("E1000 MMIO base (virtual): 0x%lx\n", e1000_dev.mmio_base);
         
         // Try to read the status register to verify MMIO access
         uint32_t status = e1000_read_reg(&e1000_dev, E1000_STATUS);
+        DEBUG_INFO("E1000 STATUS register: 0x%08x\n", status);
         if (status == 0xFFFFFFFF) {
             // MMIO access failed
+            DEBUG_ERROR("E1000 STATUS read failed (0xFFFFFFFF)\n");
             e1000_dev.mmio_base = 0;
             return -1;
         }
     } else {
+        DEBUG_ERROR("E1000 BAR0 is I/O mapped, not supported\n");
         return -1; // We don't support I/O port mapped devices
     }
     
     // Reset the device
     e1000_reset(&e1000_dev);
     
+    DEBUG_INFO("E1000: Reading MAC address...\n");
+    
     // Read MAC address
     e1000_read_mac_address(&e1000_dev);
     
+    DEBUG_INFO("E1000: Initializing RX ring...\n");
+    
     // Initialize RX and TX rings
     if (e1000_rx_init(&e1000_dev) != 0) {
+        DEBUG_ERROR("E1000: RX init failed\n");
         return -1;
     }
     
+    DEBUG_INFO("E1000: Initializing TX ring...\n");
+    
     if (e1000_tx_init(&e1000_dev) != 0) {
+        DEBUG_ERROR("E1000: TX init failed\n");
         return -1;
     }
+    
+    DEBUG_INFO("E1000: Setting link up...\n");
     
     // Set link up
     uint32_t ctrl = e1000_read_reg(&e1000_dev, E1000_CTRL);
@@ -356,10 +437,18 @@ int e1000_probe(pci_device_t *pci_dev) {
     e1000_write_reg(&e1000_dev, E1000_CTRL, ctrl);
     
     e1000_initialized = true;
+    
+    DEBUG_INFO("E1000 MAC address: %02x:%02x:%02x:%02x:%02x:%02x\n",
+               e1000_dev.mac_address[0], e1000_dev.mac_address[1],
+               e1000_dev.mac_address[2], e1000_dev.mac_address[3],
+               e1000_dev.mac_address[4], e1000_dev.mac_address[5]);
+    DEBUG_INFO("E1000 driver initialized successfully\n");
+    
     return 0;
 }
 
 int e1000_init(void) {
+    DEBUG_INFO("Scanning for E1000 NIC...\n");
     // Scan for E1000 devices
     pci_device_t *pci_dev = pci_find_device(E1000_VENDOR_ID, E1000_DEVICE_ID_82540EM);
     if (!pci_dev) {
@@ -370,10 +459,15 @@ int e1000_init(void) {
     }
     
     if (!pci_dev) {
+        DEBUG_WARN("No E1000 NIC found\n");
         return -1; // No E1000 device found
     }
     
+    DEBUG_INFO("Found E1000 NIC at %d:%d.%d\n", 
+               pci_dev->bus, pci_dev->device, pci_dev->function);
+    
     if (e1000_probe(pci_dev) != 0) {
+        DEBUG_ERROR("E1000 probe failed\n");
         return -1;
     }
     

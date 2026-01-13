@@ -138,3 +138,6 @@ EXCEPTION_HANDLER 16        # Floating Point
 EXCEPTION_HANDLER_WITH_ERROR 17  # Alignment Check
 EXCEPTION_HANDLER 18        # Machine Check
 EXCEPTION_HANDLER 19        # SIMD Floating Point
+
+# Mark stack as non-executable to suppress linker warning
+.section .note.GNU-stack, "", @progbits

@@ -57,6 +57,11 @@ void vmm_enable_paging(void);
 #define VIRT_TO_PHYS(vaddr) ((uint64_t)(vaddr) - KERNEL_VIRTUAL_BASE)
 #define PHYS_TO_VIRT(paddr) ((void*)((uint64_t)(paddr) + KERNEL_VIRTUAL_BASE))
 
+// HHDM (Higher Half Direct Map) support
+uint64_t vmm_get_hhdm_offset(void);
+void vmm_set_hhdm_offset(uint64_t offset);
+#define PHYS_TO_HHDM(paddr) ((void*)((uint64_t)(paddr) + vmm_get_hhdm_offset()))
+
 // Page table index extraction
 #define PML4_INDEX(addr) (((addr) >> 39) & 0x1FF)
 #define PDP_INDEX(addr)  (((addr) >> 30) & 0x1FF)

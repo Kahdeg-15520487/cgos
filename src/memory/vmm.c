@@ -11,6 +11,19 @@ static vmm_context_t *current_context = &kernel_context;
 // MMIO allocation tracker
 static uint64_t next_mmio_vaddr = MMIO_VIRTUAL_BASE;
 
+// HHDM (Higher Half Direct Map) offset from Limine
+static uint64_t hhdm_offset = 0;
+
+// HHDM getter and setter
+uint64_t vmm_get_hhdm_offset(void) {
+    return hhdm_offset;
+}
+
+void vmm_set_hhdm_offset(uint64_t offset) {
+    hhdm_offset = offset;
+    DEBUG_INFO("HHDM offset set to: 0x%lx\n", offset);
+}
+
 // Forward declarations
 static page_table_t* get_or_create_table(page_table_t *parent, int index, uint64_t flags);
 static void map_kernel_space(void);
@@ -47,17 +60,80 @@ static void map_kernel_space(void) {
 }
 
 void* vmm_map_page(uint64_t physical_addr, uint64_t virtual_addr, uint64_t flags) {
-    // For now, we'll only support MMIO mapping in a limited way
-    // since creating new page tables requires physical memory allocation
-    // that may not be identity-mapped by Limine
+    DEBUG_DEBUG("vmm_map_page: phys=0x%lx virt=0x%lx flags=0x%lx\n", 
+               physical_addr, virtual_addr, flags);
     
-    DEBUG_INFO("vmm_map_page: Requested mapping of phys=0x%lx to virt=0x%lx\n", 
-               physical_addr, virtual_addr);
+    if (hhdm_offset == 0) {
+        DEBUG_ERROR("HHDM not initialized! Cannot map page.\n");
+        return NULL;
+    }
     
-    // For now, we'll just return the virtual address without actually mapping
-    // This is a temporary limitation until we implement proper virtual address translation
-    DEBUG_INFO("Warning: vmm_map_page not fully implemented - returning requested virtual address\n");
+    // Get PML4 via HHDM (convert physical CR3 to virtual)
+    uint64_t cr3_phys = kernel_context.cr3_value & ~0xFFFULL;
+    page_table_t *pml4 = (page_table_t*)(cr3_phys + hhdm_offset);
     
+    // Get page table indices
+    int pml4_idx = PML4_INDEX(virtual_addr);
+    int pdp_idx = PDP_INDEX(virtual_addr);
+    int pd_idx = PD_INDEX(virtual_addr);
+    int pt_idx = PT_INDEX(virtual_addr);
+    
+    // Walk/create PDP
+    page_table_t *pdp;
+    if (pml4->entries[pml4_idx] & PAGE_PRESENT) {
+        uint64_t pdp_phys = pml4->entries[pml4_idx] & ~PAGE_MASK;
+        pdp = (page_table_t*)(pdp_phys + hhdm_offset);
+    } else {
+        void *new_page = physical_alloc_page();
+        if (!new_page) {
+            DEBUG_ERROR("Failed to allocate PDP\n");
+            return NULL;
+        }
+        memset((void*)((uint64_t)new_page + hhdm_offset), 0, PAGE_SIZE);
+        pml4->entries[pml4_idx] = (uint64_t)new_page | PAGE_PRESENT | PAGE_WRITABLE;
+        pdp = (page_table_t*)((uint64_t)new_page + hhdm_offset);
+    }
+    
+    // Walk/create PD
+    page_table_t *pd;
+    if (pdp->entries[pdp_idx] & PAGE_PRESENT) {
+        uint64_t pd_phys = pdp->entries[pdp_idx] & ~PAGE_MASK;
+        pd = (page_table_t*)(pd_phys + hhdm_offset);
+    } else {
+        void *new_page = physical_alloc_page();
+        if (!new_page) {
+            DEBUG_ERROR("Failed to allocate PD\n");
+            return NULL;
+        }
+        memset((void*)((uint64_t)new_page + hhdm_offset), 0, PAGE_SIZE);
+        pdp->entries[pdp_idx] = (uint64_t)new_page | PAGE_PRESENT | PAGE_WRITABLE;
+        pd = (page_table_t*)((uint64_t)new_page + hhdm_offset);
+    }
+    
+    // Walk/create PT
+    page_table_t *pt;
+    if (pd->entries[pd_idx] & PAGE_PRESENT) {
+        uint64_t pt_phys = pd->entries[pd_idx] & ~PAGE_MASK;
+        pt = (page_table_t*)(pt_phys + hhdm_offset);
+    } else {
+        void *new_page = physical_alloc_page();
+        if (!new_page) {
+            DEBUG_ERROR("Failed to allocate PT\n");
+            return NULL;
+        }
+        memset((void*)((uint64_t)new_page + hhdm_offset), 0, PAGE_SIZE);
+        pd->entries[pd_idx] = (uint64_t)new_page | PAGE_PRESENT | PAGE_WRITABLE;
+        pt = (page_table_t*)((uint64_t)new_page + hhdm_offset);
+    }
+    
+    // Map the actual page with provided flags
+    uint64_t page_flags = PAGE_PRESENT | (flags & (PAGE_WRITABLE | PAGE_USER | PAGE_PCD | PAGE_PWT));
+    pt->entries[pt_idx] = physical_addr | page_flags;
+    
+    // Flush TLB for this page
+    asm volatile("invlpg (%0)" :: "r"(virtual_addr) : "memory");
+    
+    DEBUG_DEBUG("vmm_map_page: Mapped phys=0x%lx -> virt=0x%lx\n", physical_addr, virtual_addr);
     return (void*)virtual_addr;
 }
 
@@ -91,20 +167,107 @@ void* vmm_map_mmio(uint64_t physical_addr, size_t size) {
     DEBUG_INFO("vmm_map_mmio: Requested MMIO mapping of phys=0x%lx size=0x%lx\n", 
                physical_addr, size);
     
-    // For now, use a simple approach: assume Limine has set up identity mapping
-    // for physical memory, or use a direct approach that avoids modifying page tables
+    if (hhdm_offset == 0) {
+        DEBUG_ERROR("HHDM not initialized! Cannot map MMIO.\n");
+        return NULL;
+    }
     
-    // Strategy: For MMIO regions, we'll try to use identity mapping first
-    // If that fails, we'd need a more sophisticated approach, but for now
-    // let's assume Limine has mapped enough physical memory for us to access MMIO
+    // Allocate virtual address space for MMIO
+    uint64_t vaddr = next_mmio_vaddr;
+    size_t pages = (size + PAGE_SIZE - 1) / PAGE_SIZE;
+    next_mmio_vaddr += pages * PAGE_SIZE;
     
-    // Simple identity mapping - this works if Limine mapped all physical memory
-    void* result = (void*)physical_addr;
+    DEBUG_INFO("Allocating MMIO virtual range: 0x%lx - 0x%lx (%zu pages)\n", 
+               vaddr, next_mmio_vaddr, pages);
     
-    DEBUG_INFO("MMIO mapping (identity): phys=0x%lx -> virt=0x%lx size=0x%lx\n", 
-               physical_addr, (uint64_t)result, size);
+    // Get PML4 via HHDM (convert physical CR3 to virtual)
+    uint64_t cr3_phys = kernel_context.cr3_value & ~0xFFFULL;
+    page_table_t *pml4 = (page_table_t*)(cr3_phys + hhdm_offset);
     
-    return result;
+    DEBUG_DEBUG("PML4 at physical 0x%lx, virtual 0x%lx\n", cr3_phys, (uint64_t)pml4);
+    
+    // Map each page
+    for (size_t i = 0; i < pages; i++) {
+        uint64_t paddr = physical_addr + (i * PAGE_SIZE);
+        uint64_t this_vaddr = vaddr + (i * PAGE_SIZE);
+        
+        // Get page table indices
+        int pml4_idx = PML4_INDEX(this_vaddr);
+        int pdp_idx = PDP_INDEX(this_vaddr);
+        int pd_idx = PD_INDEX(this_vaddr);
+        int pt_idx = PT_INDEX(this_vaddr);
+        
+        DEBUG_DEBUG("Mapping page: virt=0x%lx -> phys=0x%lx\n", this_vaddr, paddr);
+        DEBUG_DEBUG("  Indices: PML4=%d, PDP=%d, PD=%d, PT=%d\n", 
+                   pml4_idx, pdp_idx, pd_idx, pt_idx);
+        
+        // Walk/create PDP
+        page_table_t *pdp;
+        if (pml4->entries[pml4_idx] & PAGE_PRESENT) {
+            uint64_t pdp_phys = pml4->entries[pml4_idx] & ~PAGE_MASK;
+            pdp = (page_table_t*)(pdp_phys + hhdm_offset);
+        } else {
+            void *new_page = physical_alloc_page();
+            if (!new_page) {
+                DEBUG_ERROR("Failed to allocate PDP\n");
+                return NULL;
+            }
+            memset((void*)((uint64_t)new_page + hhdm_offset), 0, PAGE_SIZE);
+            pml4->entries[pml4_idx] = (uint64_t)new_page | PAGE_PRESENT | PAGE_WRITABLE;
+            pdp = (page_table_t*)((uint64_t)new_page + hhdm_offset);
+            DEBUG_DEBUG("  Created new PDP at phys 0x%lx\n", (uint64_t)new_page);
+        }
+        
+        // Walk/create PD
+        page_table_t *pd;
+        if (pdp->entries[pdp_idx] & PAGE_PRESENT) {
+            uint64_t pd_phys = pdp->entries[pdp_idx] & ~PAGE_MASK;
+            pd = (page_table_t*)(pd_phys + hhdm_offset);
+        } else {
+            void *new_page = physical_alloc_page();
+            if (!new_page) {
+                DEBUG_ERROR("Failed to allocate PD\n");
+                return NULL;
+            }
+            memset((void*)((uint64_t)new_page + hhdm_offset), 0, PAGE_SIZE);
+            pdp->entries[pdp_idx] = (uint64_t)new_page | PAGE_PRESENT | PAGE_WRITABLE;
+            pd = (page_table_t*)((uint64_t)new_page + hhdm_offset);
+            DEBUG_DEBUG("  Created new PD at phys 0x%lx\n", (uint64_t)new_page);
+        }
+        
+        // Walk/create PT
+        page_table_t *pt;
+        if (pd->entries[pd_idx] & PAGE_PRESENT) {
+            uint64_t pt_phys = pd->entries[pd_idx] & ~PAGE_MASK;
+            pt = (page_table_t*)(pt_phys + hhdm_offset);
+        } else {
+            void *new_page = physical_alloc_page();
+            if (!new_page) {
+                DEBUG_ERROR("Failed to allocate PT\n");
+                return NULL;
+            }
+            memset((void*)((uint64_t)new_page + hhdm_offset), 0, PAGE_SIZE);
+            pd->entries[pd_idx] = (uint64_t)new_page | PAGE_PRESENT | PAGE_WRITABLE;
+            pt = (page_table_t*)((uint64_t)new_page + hhdm_offset);
+            DEBUG_DEBUG("  Created new PT at phys 0x%lx\n", (uint64_t)new_page);
+        }
+        
+        // Map the actual page with cache-disable for MMIO
+        uint64_t page_flags = PAGE_PRESENT | PAGE_WRITABLE | PAGE_PCD | PAGE_PWT;
+        pt->entries[pt_idx] = paddr | page_flags;
+        
+        DEBUG_DEBUG("  PT[%d] = 0x%lx (flags: PCD+PWT for uncached MMIO)\n", 
+                   pt_idx, pt->entries[pt_idx]);
+    }
+    
+    // Flush TLB for the new mappings
+    for (size_t i = 0; i < pages; i++) {
+        uint64_t flush_addr = vaddr + (i * PAGE_SIZE);
+        asm volatile("invlpg (%0)" :: "r"(flush_addr) : "memory");
+    }
+    
+    DEBUG_INFO("MMIO mapped successfully: phys=0x%lx -> virt=0x%lx\n", physical_addr, vaddr);
+    return (void*)vaddr;
 }
 
 void vmm_unmap_page(uint64_t virtual_addr) {

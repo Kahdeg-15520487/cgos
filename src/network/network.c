@@ -61,18 +61,22 @@ int network_init(void) {
     }
     
     // Initialize ethernet interface for DHCP demo
-    DEBUG_DEBUG("Initializing ethernet interface\n");
+    DEBUG_INFO("Initializing ethernet interface\n");
     if (ethernet_init() != NET_SUCCESS) {
         DEBUG_WARN("Failed to initialize ethernet interface, continuing with loopback only\n");
         // Don't fail if ethernet init fails, just continue with loopback
+    } else {
+        DEBUG_INFO("Ethernet interface initialized successfully\n");
     }
 
     DEBUG_INFO("Network subsystem initialization completed successfully\n");
+    DEBUG_INFO("Total interfaces registered: %d\n", interface_count);
     return NET_SUCCESS;
 }
 
 int network_register_interface(network_interface_t *iface) {
     if (interface_count >= MAX_NETWORK_INTERFACES || iface == NULL) {
+        DEBUG_ERROR("Failed to register interface: count %d, iface %p\n", interface_count, iface);
         return NET_ERROR;
     }
 
