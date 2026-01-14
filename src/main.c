@@ -16,7 +16,10 @@
 #include "interrupt/interrupt.h"
 #include "timer/timer.h"
 #include "drivers/keyboard.h"
+#include "drivers/ata.h"
 #include "shell/shell.h"
+#include "fs/fat16.h"
+#include "acpi/acpi.h"
 
 // Set the base revision to 3, this is recommended as this is the latest
 // base revision described by the Limine boot protocol specification.
@@ -364,6 +367,24 @@ void kmain(void) {
         kprintf(10, 525, "ERROR: Network stack initialization failed!");
         kprintf(10, 540, "System continuing without network support");
     }
+    
+    // Initialize ATA driver
+    DEBUG_INFO("Initializing ATA driver...\n");
+    ata_init();
+    
+    // Mount FAT16 filesystem (try both drives)
+    DEBUG_INFO("Attempting to mount FAT16...\n");
+    if (fat16_mount(0) == 0) {
+        DEBUG_INFO("FAT16 filesystem mounted on drive 0\n");
+    } else if (fat16_mount(1) == 0) {
+        DEBUG_INFO("FAT16 filesystem mounted on drive 1\n");
+    } else {
+        DEBUG_INFO("No FAT16 filesystem found\n");
+    }
+    
+    // Initialize ACPI
+    DEBUG_INFO("Initializing ACPI...\n");
+    acpi_init();
     
     // Initialize keyboard driver
     kprintf(10, 750, "Initializing keyboard...");

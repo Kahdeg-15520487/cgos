@@ -12,6 +12,9 @@
 #include "../network/dhcp.h"
 #include "../network/arp.h"
 #include "../network/icmp.h"
+#include "../fs/fat16.h"
+#include "../acpi/acpi.h"
+#include "../drivers/ata.h"
 #include "../graphic/graphic.h"
 #include "../debug/debug.h"
 
@@ -109,6 +112,13 @@ static void cmd_help(void) {
     shell_println("  arp     - Show ARP table");
     shell_println("  uptime  - Show system uptime");
     shell_println("  ping    - Ping an IP address");
+    shell_println("  ls      - List files");
+    shell_println("  cat     - Display file contents");
+    shell_println("  shutdown- Power off");
+    shell_println("  reboot  - Restart system");
+    shell_println("  disk    - List disk drives");
+    shell_println("  format  - Format a drive with FAT16");
+    shell_println("  write   - Write text to file");
 }
 
 static void cmd_clear(void) {
@@ -190,6 +200,226 @@ static void cmd_arp(void) {
     // ARP table iteration would need an iterator API
     // For now, just confirm it's working
     arp_print_table();  // This outputs to debug console
+}
+
+// List directory callback
+static void ls_callback(const char *name, uint32_t size, bool is_dir) {
+    char buf[80];
+    if (is_dir) {
+        kprintf_to_buffer(buf, sizeof(buf), "  [DIR] %s", name);
+    } else {
+        kprintf_to_buffer(buf, sizeof(buf), "  %s (%u bytes)", name, size);
+    }
+    shell_println(buf);
+}
+
+static void cmd_ls(void) {
+    if (!fat16_is_mounted()) {
+        shell_println("No filesystem mounted");
+        return;
+    }
+    
+    shell_println("Files:");
+    if (fat16_list_root(ls_callback) < 0) {
+        shell_println("Error reading directory");
+    }
+}
+
+static void cmd_cat(const char *args) {
+    // Skip whitespace
+    while (*args == ' ') args++;
+    
+    if (*args == '\0') {
+        shell_println("Usage: cat <filename>");
+        return;
+    }
+    
+    if (!fat16_is_mounted()) {
+        shell_println("No filesystem mounted");
+        return;
+    }
+    
+    // Read file (max 4KB to display)
+    static char file_buf[4096];
+    int size = fat16_read_file(args, file_buf, sizeof(file_buf) - 1);
+    
+    if (size < 0) {
+        shell_println("File not found");
+        return;
+    }
+    
+    file_buf[size] = '\0';
+    
+    // Print file contents line by line
+    char *ptr = file_buf;
+    char line[256];
+    int line_pos = 0;
+    
+    while (*ptr) {
+        if (*ptr == '\n' || *ptr == '\r') {
+            line[line_pos] = '\0';
+            if (line_pos > 0) {
+                shell_println(line);
+            }
+            line_pos = 0;
+            if (*ptr == '\r' && *(ptr + 1) == '\n') ptr++;
+        } else if (line_pos < 255) {
+            line[line_pos++] = *ptr;
+        }
+        ptr++;
+    }
+    
+    // Print remaining line
+    if (line_pos > 0) {
+        line[line_pos] = '\0';
+        shell_println(line);
+    }
+}
+
+static void cmd_write(const char *args) {
+    // Skip whitespace
+    while (*args == ' ') args++;
+    
+    if (*args == '\0') {
+        shell_println("Usage: write <filename> <text>");
+        shell_println("Example: write test.txt Hello World");
+        return;
+    }
+    
+    if (!fat16_is_mounted()) {
+        shell_println("No filesystem mounted");
+        return;
+    }
+    
+    // Parse filename (until space), skip quotes
+    char filename[13];
+    int i = 0;
+    
+    // Skip opening quote if present
+    if (*args == '\'' || *args == '"') args++;
+    
+    while (*args && *args != ' ' && *args != '\'' && *args != '"' && i < 12) {
+        filename[i++] = *args++;
+    }
+    filename[i] = '\0';
+    
+    // Skip closing quote and space
+    while (*args == '\'' || *args == '"' || *args == ' ') args++;
+    
+    if (*args == '\0') {
+        shell_println("Usage: write <filename> <text>");
+        return;
+    }
+    
+    // Parse content - strip surrounding quotes if present
+    const char *content = args;
+    size_t len = 0;
+    
+    // Skip opening quote for content
+    if (*content == '\'' || *content == '"') {
+        char quote_char = *content;
+        content++;
+        
+        // Find end of quoted content
+        const char *p = content;
+        while (*p && *p != quote_char) {
+            len++;
+            p++;
+        }
+    } else {
+        // No quotes - use entire remaining string
+        const char *p = content;
+        while (*p++) len++;
+    }
+    
+    // Create file if it doesn't exist
+    if (fat16_find_file(filename, NULL) < 0) {
+        if (fat16_create_file(filename) < 0) {
+            shell_println("Failed to create file");
+            return;
+        }
+    }
+    
+    if (fat16_write_file(filename, content, len) < 0) {
+        shell_println("Failed to write file");
+        return;
+    }
+    
+    char buf[64];
+    kprintf_to_buffer(buf, sizeof(buf), "Wrote %u bytes to %s", (uint32_t)len, filename);
+    shell_println(buf);
+}
+
+static void cmd_disk(void) {
+    shell_println("ATA Drives:");
+    char buf[80];
+    bool found = false;
+    
+    for (int i = 0; i < 2; i++) {
+        ata_drive_t *drive = ata_get_drive_info(i);
+        if (drive && drive->present) {
+            found = true;
+            uint32_t size_mb = drive->size_sectors / 2048;
+            kprintf_to_buffer(buf, sizeof(buf), "  Drive %d (%s): %s (%u MB)",
+                i, i == 0 ? "Master" : "Slave",
+                drive->model, size_mb);
+            shell_println(buf);
+        }
+    }
+    
+    if (!found) {
+        shell_println("  No drives detected");
+    }
+    
+    // Show mounted filesystem
+    if (fat16_is_mounted()) {
+        shell_println("Mounted: FAT16 filesystem");
+    } else {
+        shell_println("No filesystem mounted");
+    }
+}
+
+static void cmd_format(const char *args) {
+    // Skip whitespace
+    while (*args == ' ') args++;
+    
+    // Parse drive number
+    int drive = -1;
+    if (*args >= '0' && *args <= '1') {
+        drive = *args - '0';
+    } else {
+        // Auto-detect first available drive
+        for (int i = 0; i < 2; i++) {
+            if (ata_drive_present(i)) {
+                drive = i;
+                break;
+            }
+        }
+    }
+    
+    if (drive < 0) {
+        shell_println("Usage: format [0|1]");
+        shell_println("No drives available");
+        return;
+    }
+    
+    char buf[64];
+    kprintf_to_buffer(buf, sizeof(buf), "Formatting drive %d with FAT16...", drive);
+    shell_println(buf);
+    
+    // Unmount if needed
+    fat16_unmount();
+    
+    if (fat16_format(drive, "CGOS") == 0) {
+        shell_println("Format complete!");
+        
+        // Try to mount it
+        if (fat16_mount(drive) == 0) {
+            shell_println("Filesystem mounted");
+        }
+    } else {
+        shell_println("Format failed");
+    }
 }
 
 static void cmd_uptime(void) {
@@ -303,7 +533,23 @@ static void shell_execute(const char *cmd) {
     } else if (shell_strcmp(cmd, "uptime") == 0) {
         cmd_uptime();
     } else if (shell_strncmp(cmd, "ping ", 5) == 0 || shell_strcmp(cmd, "ping") == 0) {
-        cmd_ping(cmd + 4);  // Pass args after "ping"
+        cmd_ping(cmd + 4);
+    } else if (shell_strcmp(cmd, "ls") == 0) {
+        cmd_ls();
+    } else if (shell_strcmp(cmd, "cat") == 0 || shell_strncmp(cmd, "cat ", 4) == 0) {
+        cmd_cat(cmd + 3);
+    } else if (shell_strcmp(cmd, "write") == 0 || shell_strncmp(cmd, "write ", 6) == 0) {
+        cmd_write(cmd + 5);
+    } else if (shell_strcmp(cmd, "shutdown") == 0) {
+        shell_println("Shutting down...");
+        acpi_shutdown();
+    } else if (shell_strcmp(cmd, "reboot") == 0) {
+        shell_println("Rebooting...");
+        acpi_reboot();
+    } else if (shell_strcmp(cmd, "disk") == 0) {
+        cmd_disk();
+    } else if (shell_strcmp(cmd, "format") == 0 || shell_strncmp(cmd, "format ", 7) == 0) {
+        cmd_format(cmd + 6);
     } else {
         shell_print("Unknown command: ");
         shell_println(cmd);
