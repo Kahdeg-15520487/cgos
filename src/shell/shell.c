@@ -11,12 +11,19 @@
 #include "../network/network.h"
 #include "../network/dhcp.h"
 #include "../network/arp.h"
+#include "../network/icmp.h"
 #include "../graphic/graphic.h"
 #include "../debug/debug.h"
 
 // Command buffer
 static char cmd_buffer[SHELL_BUFFER_SIZE];
 static int cmd_pos = 0;
+
+// Command history
+#define HISTORY_SIZE 16
+static char history[HISTORY_SIZE][SHELL_BUFFER_SIZE];
+static int history_count = 0;
+static int history_pos = 0;  // Current position when navigating
 
 // Screen position for shell output
 static int shell_x = 10;
@@ -101,6 +108,7 @@ static void cmd_help(void) {
     shell_println("  net     - Show network info");
     shell_println("  arp     - Show ARP table");
     shell_println("  uptime  - Show system uptime");
+    shell_println("  ping    - Ping an IP address");
 }
 
 static void cmd_clear(void) {
@@ -196,6 +204,82 @@ static void cmd_uptime(void) {
     shell_println(buf);
 }
 
+// Simple IP address parser (e.g., "10.0.2.2")
+static uint32_t parse_ip(const char *str) {
+    uint32_t ip = 0;
+    int octet = 0;
+    int count = 0;
+    
+    while (*str && count < 4) {
+        if (*str >= '0' && *str <= '9') {
+            octet = octet * 10 + (*str - '0');
+        } else if (*str == '.') {
+            ip = (ip << 8) | (octet & 0xFF);
+            octet = 0;
+            count++;
+        } else {
+            break;
+        }
+        str++;
+    }
+    
+    // Last octet
+    if (count == 3) {
+        ip = (ip << 8) | (octet & 0xFF);
+    }
+    
+    return ip;
+}
+
+static void cmd_ping(const char *args) {
+    // Skip "ping "
+    while (*args == ' ') args++;
+    
+    if (*args == '\0') {
+        shell_println("Usage: ping <ip>");
+        shell_println("Example: ping 10.0.2.2");
+        return;
+    }
+    
+    uint32_t dest_ip = parse_ip(args);
+    if (dest_ip == 0) {
+        shell_println("Invalid IP address");
+        return;
+    }
+    
+    char buf[80];
+    kprintf_to_buffer(buf, sizeof(buf), "Pinging %d.%d.%d.%d...",
+        (dest_ip >> 24) & 0xFF, (dest_ip >> 16) & 0xFF,
+        (dest_ip >> 8) & 0xFF, dest_ip & 0xFF);
+    shell_println(buf);
+    
+    // Get eth0 interface
+    network_interface_t *iface = network_get_interface(1);
+    if (!iface) {
+        shell_println("No network interface");
+        return;
+    }
+    
+    // Ping 4 times
+    ping_result_t result;
+    icmp_ping(iface, dest_ip, 4, &result);
+    
+    // Show results
+    shell_println("");
+    kprintf_to_buffer(buf, sizeof(buf), "Sent: %d, Received: %d",
+        result.sent, result.received);
+    shell_println(buf);
+    
+    if (result.received > 0) {
+        uint32_t avg = result.total_time / result.received;
+        kprintf_to_buffer(buf, sizeof(buf), "RTT: min=%u avg=%u max=%u ms",
+            result.min_time, avg, result.max_time);
+        shell_println(buf);
+    } else {
+        shell_println("No reply received");
+    }
+}
+
 static void shell_execute(const char *cmd) {
     // Skip leading whitespace
     while (*cmd == ' ') cmd++;
@@ -218,6 +302,8 @@ static void shell_execute(const char *cmd) {
         cmd_arp();
     } else if (shell_strcmp(cmd, "uptime") == 0) {
         cmd_uptime();
+    } else if (shell_strncmp(cmd, "ping ", 5) == 0 || shell_strcmp(cmd, "ping") == 0) {
+        cmd_ping(cmd + 4);  // Pass args after "ping"
     } else {
         shell_print("Unknown command: ");
         shell_println(cmd);
@@ -225,10 +311,56 @@ static void shell_execute(const char *cmd) {
     }
 }
 
-void shell_process_char(char c) {
+// Helper to clear and redraw current command line
+static void shell_redraw_cmd(void) {
+    // Clear from prompt to end of line
+    int prompt_len = 6;  // "cgos> "
+    shell_x = 10 + prompt_len * 8;
+    draw_rect(shell_x, shell_y, 780 - shell_x, line_height, 0, 0x6495ED, true);
+    
+    // Redraw command
+    for (int i = 0; i < cmd_pos; i++) {
+        draw_char(shell_x, shell_y, cmd_buffer[i], 0xFFFFFF);
+        shell_x += 8;
+    }
+}
+
+// Helper to copy string
+static void shell_strcpy(char *dest, const char *src) {
+    while (*src) {
+        *dest++ = *src++;
+    }
+    *dest = '\0';
+}
+
+// Helper for string length
+static int shell_strlen(const char *s) {
+    int len = 0;
+    while (*s++) len++;
+    return len;
+}
+
+void shell_process_char(unsigned char c) {
     if (c == '\n' || c == '\r') {
         // Execute command
         cmd_buffer[cmd_pos] = '\0';
+        
+        // Save non-empty commands to history
+        if (cmd_pos > 0) {
+            // Shift history if full
+            if (history_count < HISTORY_SIZE) {
+                shell_strcpy(history[history_count], cmd_buffer);
+                history_count++;
+            } else {
+                // Shift all entries up
+                for (int i = 0; i < HISTORY_SIZE - 1; i++) {
+                    shell_strcpy(history[i], history[i + 1]);
+                }
+                shell_strcpy(history[HISTORY_SIZE - 1], cmd_buffer);
+            }
+        }
+        history_pos = history_count;  // Reset to end
+        
         shell_newline();
         shell_execute(cmd_buffer);
         cmd_pos = 0;
@@ -238,8 +370,34 @@ void shell_process_char(char c) {
         if (cmd_pos > 0) {
             cmd_pos--;
             shell_x -= 8;
-            // Erase character by drawing filled rectangle over it
             draw_rect(shell_x, shell_y, 8, 15, 0, 0x6495ED, true);
+        }
+    } else if (c == SPECIAL_KEY_ESC) {
+        // ESC - clear current command
+        cmd_pos = 0;
+        cmd_buffer[0] = '\0';
+        shell_redraw_cmd();
+    } else if (c == SPECIAL_KEY_UP) {
+        // Up arrow - previous history
+        if (history_pos > 0) {
+            history_pos--;
+            shell_strcpy(cmd_buffer, history[history_pos]);
+            cmd_pos = shell_strlen(cmd_buffer);
+            shell_redraw_cmd();
+        }
+    } else if (c == SPECIAL_KEY_DOWN) {
+        // Down arrow - next history
+        if (history_pos < history_count - 1) {
+            history_pos++;
+            shell_strcpy(cmd_buffer, history[history_pos]);
+            cmd_pos = shell_strlen(cmd_buffer);
+            shell_redraw_cmd();
+        } else if (history_pos < history_count) {
+            // At end, clear command
+            history_pos = history_count;
+            cmd_pos = 0;
+            cmd_buffer[0] = '\0';
+            shell_redraw_cmd();
         }
     } else if (c >= 32 && c < 127) {
         // Printable character

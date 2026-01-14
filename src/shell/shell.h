@@ -17,7 +17,7 @@
 // Function prototypes
 void shell_init(void);
 void shell_run(void);
-void shell_process_char(char c);
+void shell_process_char(unsigned char c);
 void shell_print(const char *str);
 void shell_println(const char *str);
 

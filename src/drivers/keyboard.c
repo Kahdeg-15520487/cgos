@@ -9,7 +9,7 @@
 
 // Scancode Set 1 to ASCII translation table (lowercase)
 static const char scancode_to_ascii[] = {
-    0,    0,   '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', '\b',
+    0,    0x1B, '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', '\b',
     '\t', 'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', '[', ']', '\n',
     0,    'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';', '\'', '`',
     0,    '\\', 'z', 'x', 'c', 'v', 'b', 'n', 'm', ',', '.', '/', 0,
@@ -18,7 +18,7 @@ static const char scancode_to_ascii[] = {
 
 // Scancode Set 1 to ASCII translation table (uppercase/shifted)
 static const char scancode_to_ascii_shift[] = {
-    0,    0,   '!', '@', '#', '$', '%', '^', '&', '*', '(', ')', '_', '+', '\b',
+    0,    0x1B, '!', '@', '#', '$', '%', '^', '&', '*', '(', ')', '_', '+', '\b',
     '\t', 'Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P', '{', '}', '\n',
     0,    'A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L', ':', '"', '~',
     0,    '|', 'Z', 'X', 'C', 'V', 'B', 'N', 'M', '<', '>', '?', 0,
@@ -32,6 +32,9 @@ static volatile int buffer_tail = 0;
 
 // Modifier key state
 static volatile uint8_t modifier_state = 0;
+
+// Extended key prefix flag (for 0xE0 keys like arrows)
+static volatile bool extended_key = false;
 
 // Buffer a character
 static void buffer_put(char c) {
@@ -84,8 +87,29 @@ uint8_t keyboard_get_modifiers(void) {
 // Keyboard interrupt handler
 void keyboard_irq_handler(void) {
     uint8_t scancode = inb(KEYBOARD_DATA_PORT);
+    
+    // Handle extended key prefix
+    if (scancode == 0xE0) {
+        extended_key = true;
+        goto done;
+    }
+    
     bool released = (scancode & 0x80) != 0;
     uint8_t key = scancode & 0x7F;
+    
+    // Handle extended keys (arrow keys, etc.)
+    if (extended_key) {
+        extended_key = false;
+        if (!released) {
+            switch (key) {
+                case 0x48: buffer_put(SPECIAL_KEY_UP);    break;  // Up arrow
+                case 0x50: buffer_put(SPECIAL_KEY_DOWN);  break;  // Down arrow
+                case 0x4B: buffer_put(SPECIAL_KEY_LEFT);  break;  // Left arrow
+                case 0x4D: buffer_put(SPECIAL_KEY_RIGHT); break;  // Right arrow
+            }
+        }
+        goto done;
+    }
     
     // Handle modifier keys
     switch (key) {

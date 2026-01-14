@@ -1,8 +1,18 @@
 #include "icmp.h"
 #include "ip.h"
 #include "../memory/memory.h"
+#include "../timer/timer.h"
+#include "../debug/debug.h"
+
+// Ping reply tracking
+static volatile bool ping_reply_received = false;
+static volatile uint32_t ping_reply_src_ip = 0;
+static volatile uint16_t ping_reply_seq = 0;
+static volatile uint64_t ping_send_time = 0;
+static volatile uint64_t ping_reply_time = 0;
 
 int icmp_init(void) {
+    ping_reply_received = false;
     return NET_SUCCESS;
 }
 
@@ -115,11 +125,23 @@ void icmp_process_packet(network_interface_t *iface, uint32_t src_ip, uint32_t d
             break;
             
         case ICMP_ECHO_REPLY:
-            // Handle ping reply (could notify waiting applications)
+            // Track ping reply
+            {
+                ping_reply_received = true;
+                ping_reply_src_ip = src_ip;
+                ping_reply_seq = __builtin_bswap16(packet->header.data.echo.sequence);
+                ping_reply_time = timer_get_ticks();
+                DEBUG_INFO("ICMP: Echo reply from %d.%d.%d.%d seq=%u\n",
+                    (src_ip >> 24) & 0xFF, (src_ip >> 16) & 0xFF,
+                    (src_ip >> 8) & 0xFF, src_ip & 0xFF, ping_reply_seq);
+            }
             break;
             
         case ICMP_DEST_UNREACHABLE:
             // Handle destination unreachable (could notify transport layer)
+            DEBUG_INFO("ICMP: Destination unreachable from %d.%d.%d.%d\n",
+                (src_ip >> 24) & 0xFF, (src_ip >> 16) & 0xFF,
+                (src_ip >> 8) & 0xFF, src_ip & 0xFF);
             break;
             
         default:
@@ -148,4 +170,59 @@ uint16_t icmp_checksum(icmp_header_t *header, size_t len) {
     }
 
     return ~sum;
+}
+
+// Ping function for shell use
+int icmp_ping(network_interface_t *iface, uint32_t dest_ip, int count, ping_result_t *result) {
+    if (!iface || !result) {
+        return NET_INVALID_PARAM;
+    }
+    
+    result->sent = 0;
+    result->received = 0;
+    result->min_time = 0xFFFFFFFF;
+    result->max_time = 0;
+    result->total_time = 0;
+    
+    uint16_t identifier = (uint16_t)(timer_get_ticks() & 0xFFFF);
+    
+    for (int i = 0; i < count; i++) {
+        // Clear reply flag
+        ping_reply_received = false;
+        ping_send_time = timer_get_ticks();
+        
+        // Send echo request
+        int ret = icmp_send_echo_request(iface, dest_ip, identifier, (uint16_t)i, NULL, 0);
+        if (ret != NET_SUCCESS) {
+            continue;
+        }
+        result->sent++;
+        
+        // Wait for reply (up to 1 second = 1000 ticks at 1000 Hz)
+        uint64_t timeout = ping_send_time + 1000;
+        while (!ping_reply_received && timer_get_ticks() < timeout) {
+            // Poll network while waiting
+            network_process_packets();
+            __asm__ volatile("pause");
+        }
+        
+        if (ping_reply_received && ping_reply_src_ip == dest_ip) {
+            result->received++;
+            uint32_t rtt = (uint32_t)(ping_reply_time - ping_send_time);
+            result->total_time += rtt;
+            if (rtt < result->min_time) result->min_time = rtt;
+            if (rtt > result->max_time) result->max_time = rtt;
+        }
+        
+        // Small delay between pings
+        if (i < count - 1) {
+            uint64_t delay_end = timer_get_ticks() + 500;  // 500ms delay
+            while (timer_get_ticks() < delay_end) {
+                network_process_packets();
+                __asm__ volatile("pause");
+            }
+        }
+    }
+    
+    return NET_SUCCESS;
 }

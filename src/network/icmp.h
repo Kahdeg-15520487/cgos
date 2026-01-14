@@ -58,4 +58,16 @@ int icmp_send_dest_unreachable(network_interface_t *iface, uint32_t dest_ip, uin
 void icmp_process_packet(network_interface_t *iface, uint32_t src_ip, uint32_t dest_ip, icmp_packet_t *packet);
 uint16_t icmp_checksum(icmp_header_t *header, size_t len);
 
+// Ping result structure
+typedef struct {
+    int sent;
+    int received;
+    uint32_t min_time;  // in ms (ticks)
+    uint32_t max_time;
+    uint32_t total_time;
+} ping_result_t;
+
+// Ping function for shell
+int icmp_ping(network_interface_t *iface, uint32_t dest_ip, int count, ping_result_t *result);
+
 #endif // ICMP_H

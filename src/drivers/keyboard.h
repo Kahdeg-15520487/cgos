@@ -61,6 +61,13 @@
 #define MOD_ALT     0x04
 #define MOD_CAPS    0x08
 
+// Special key character codes (returned in key buffer)
+#define SPECIAL_KEY_UP     0x80
+#define SPECIAL_KEY_DOWN   0x81
+#define SPECIAL_KEY_LEFT   0x82
+#define SPECIAL_KEY_RIGHT  0x83
+#define SPECIAL_KEY_ESC    0x1B
+
 // Key event structure
 typedef struct {
     char ascii;         // ASCII character (0 if special key)
