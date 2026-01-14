@@ -178,64 +178,117 @@ static void itoa(int value, char *str, int base) {
     }
 }
 
+// Helper: unsigned to string with padding
+static void utoa_padded(unsigned int value, char *str, int base, int width, char pad) {
+    char temp[32];
+    int i = 0;
+    
+    if (value == 0) {
+        temp[i++] = '0';
+    } else {
+        while (value > 0) {
+            int digit = value % base;
+            temp[i++] = digit < 10 ? '0' + digit : 'a' + digit - 10;
+            value /= base;
+        }
+    }
+    
+    // Pad to width
+    while (i < width) {
+        temp[i++] = pad;
+    }
+    
+    // Reverse
+    for (int j = 0; j < i; j++) {
+        str[j] = temp[i - 1 - j];
+    }
+    str[i] = '\0';
+}
+
 // vsprintf function to handle formatting
 static int vsprintf(char *str, const char *format, va_list args) {
     char *s = str;
     for (; *format; format++) {
         if (*format == '%') {
             format++;
+            
+            // Parse width (e.g., %02x, %04x)
+            int width = 0;
+            char pad = ' ';
+            if (*format == '0') {
+                pad = '0';
+                format++;
+            }
+            while (*format >= '0' && *format <= '9') {
+                width = width * 10 + (*format - '0');
+                format++;
+            }
+            
             switch (*format) {
                 case 'd': {
                     int value = va_arg(args, int);
-                    char buffer[32] = {0}; // Clear buffer
-                    itoa(value, buffer, 10);
-                    char *buf_ptr = buffer;
-                    while (*buf_ptr) {
-                        *s++ = *buf_ptr++;
+                    char buffer[32] = {0};
+                    if (value < 0) {
+                        *s++ = '-';
+                        value = -value;
                     }
+                    utoa_padded((unsigned int)value, buffer, 10, width, pad);
+                    char *buf_ptr = buffer;
+                    while (*buf_ptr) *s++ = *buf_ptr++;
+                    break;
+                }
+                case 'u': {
+                    unsigned int value = va_arg(args, unsigned int);
+                    char buffer[32] = {0};
+                    utoa_padded(value, buffer, 10, width, pad);
+                    char *buf_ptr = buffer;
+                    while (*buf_ptr) *s++ = *buf_ptr++;
                     break;
                 }
                 case 'x': {
-                    int value = va_arg(args, int);
-                    char buffer[32] = {0}; // Clear buffer
-                    itoa(value, buffer, 16);
+                    unsigned int value = va_arg(args, unsigned int);
+                    char buffer[32] = {0};
+                    utoa_padded(value, buffer, 16, width, pad);
                     char *buf_ptr = buffer;
-                    while (*buf_ptr) {
-                        *s++ = *buf_ptr++;
-                    }
+                    while (*buf_ptr) *s++ = *buf_ptr++;
                     break;
                 }
                 case 'p': {
                     void *value = va_arg(args, void *);
-                    // Print '0x' prefix for pointer values
                     *s++ = '0';
                     *s++ = 'x';
-                    char buffer[32] = {0}; // Clear buffer
-                    // Convert pointer to unsigned long for proper hex representation
-                    itoa((unsigned long)value, buffer, 16);
+                    char buffer[32] = {0};
+                    utoa_padded((unsigned long)value, buffer, 16, 16, '0');
                     char *buf_ptr = buffer;
-                    while (*buf_ptr) {
-                        *s++ = *buf_ptr++;
-                    }
+                    while (*buf_ptr) *s++ = *buf_ptr++;
                     break;
                 }
                 case 's': {
                     char *value = va_arg(args, char *);
-                    while (*value) {
-                        *s++ = *value++;
+                    if (value) {
+                        while (*value) *s++ = *value++;
                     }
+                    break;
+                }
+                case 'c': {
+                    char value = (char)va_arg(args, int);
+                    *s++ = value;
                     break;
                 }
                 case 'l': {
                     format++;
                     if (*format == 'x') {
                         unsigned long value = va_arg(args, unsigned long);
-                        char buffer[32] = {0}; // Clear buffer
-                        itoa(value, buffer, 16);
+                        char buffer[32] = {0};
+                        utoa_padded(value, buffer, 16, width, pad);
                         char *buf_ptr = buffer;
-                        while (*buf_ptr) {
-                            *s++ = *buf_ptr++;
-                        }
+                        while (*buf_ptr) *s++ = *buf_ptr++;
+                    } else if (*format == 'u') {
+                        unsigned long value = va_arg(args, unsigned long);
+                        char buffer[32] = {0};
+                        utoa_padded(value, buffer, 10, width, pad);
+                        char *buf_ptr = buffer;
+                        while (*buf_ptr) *s++ = *buf_ptr++;
                     } else {
                         *s++ = '%';
                         *s++ = 'l';
@@ -243,6 +296,9 @@ static int vsprintf(char *str, const char *format, va_list args) {
                     }
                     break;
                 }
+                case '%':
+                    *s++ = '%';
+                    break;
                 default:
                     *s++ = '%';
                     *s++ = *format;
@@ -272,6 +328,16 @@ void kprintf(int x, int y, const char *format, ...) {
     vsprintf(buffer, format, args);
     va_end(args);
     draw_string(x, y, buffer, 0xFFFFFF); // White color
+}
+
+// Format to buffer for shell
+int kprintf_to_buffer(char *buf, int size, const char *format, ...) {
+    (void)size;  // Unused for now
+    va_list args;
+    va_start(args, format);
+    int len = vsprintf(buf, format, args);
+    va_end(args);
+    return len;
 }
 
 int abs(int x) {

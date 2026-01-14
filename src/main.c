@@ -15,6 +15,8 @@
 #include "debug/debug.h"
 #include "interrupt/interrupt.h"
 #include "timer/timer.h"
+#include "drivers/keyboard.h"
+#include "shell/shell.h"
 
 // Set the base revision to 3, this is recommended as this is the latest
 // base revision described by the Limine boot protocol specification.
@@ -363,68 +365,17 @@ void kmain(void) {
         kprintf(10, 540, "System continuing without network support");
     }
     
-    kprintf(10, 750, "System boot completed - entering main loop");
-    DEBUG_INFO("Entering main loop for packet processing\n");
+    // Initialize keyboard driver
+    kprintf(10, 750, "Initializing keyboard...");
+    DEBUG_INFO("Initializing keyboard driver...\n");
+    keyboard_init();
     
-    // Get ethernet interface for polling
-    network_interface_t *poll_iface = network_get_interface(1);
-    dhcp_client_t *poll_dhcp = poll_iface ? dhcp_get_client(poll_iface) : NULL;
+    // Initialize and run the shell
+    kprintf(10, 765, "Starting interactive shell...");
+    DEBUG_INFO("Starting shell...\n");
+    shell_init();
+    shell_run();  // This runs forever, handles keyboard input
     
-    if (poll_iface) {
-        DEBUG_INFO("Polling interface: %s active=%d\n", poll_iface->name, poll_iface->active);
-    } else {
-        DEBUG_ERROR("No ethernet interface found for polling!\n");
-    }
-    
-    uint32_t loop_count = 0;
-    uint32_t last_ip = 0;
-    uint32_t dhcp_retry_counter = 0;
-    
-    // Main loop - poll for packets
-    while (1) {
-        // Process incoming packets on all interfaces
-        network_process_packets();
-        
-        // Update DHCP client state
-        if (poll_dhcp) {
-            dhcp_client_update(poll_dhcp);
-            
-            // Check if IP address changed (DHCP completed)
-            if (poll_iface->ip_address != 0 && poll_iface->ip_address != last_ip) {
-                last_ip = poll_iface->ip_address;
-                DEBUG_INFO("DHCP acquired IP: %d.%d.%d.%d\n",
-                           (poll_iface->ip_address >> 24) & 0xFF,
-                           (poll_iface->ip_address >> 16) & 0xFF,
-                           (poll_iface->ip_address >> 8) & 0xFF,
-                           poll_iface->ip_address & 0xFF);
-                
-                kprintf(10, 765, "IP acquired: %d.%d.%d.%d",
-                       (poll_iface->ip_address >> 24) & 0xFF,
-                       (poll_iface->ip_address >> 16) & 0xFF,
-                       (poll_iface->ip_address >> 8) & 0xFF,
-                       poll_iface->ip_address & 0xFF);
-            }
-            
-            // Resend DHCP DISCOVER periodically if we don't have an IP
-            dhcp_retry_counter++;
-            if (poll_iface->ip_address == 0 && dhcp_retry_counter % 100000 == 0) {
-                DEBUG_INFO("Resending DHCP DISCOVER (retry %u)...\n", dhcp_retry_counter / 100000);
-                dhcp_client_discover(poll_dhcp);
-            }
-        }
-        
-        // Periodically log that we're still running
-        loop_count++;
-        if (loop_count % 1000000 == 0) {
-            DEBUG_INFO("Main loop iteration %u (IP: %d.%d.%d.%d)\n", 
-                       loop_count / 1000000,
-                       poll_iface ? (poll_iface->ip_address >> 24) & 0xFF : 0,
-                       poll_iface ? (poll_iface->ip_address >> 16) & 0xFF : 0,
-                       poll_iface ? (poll_iface->ip_address >> 8) & 0xFF : 0,
-                       poll_iface ? poll_iface->ip_address & 0xFF : 0);
-        }
-        
-        // Small delay to avoid spinning too fast
-        for (volatile int i = 0; i < 1000; i++);
-    }
+    // shell_run never returns, but just in case:
+    hcf();
 }

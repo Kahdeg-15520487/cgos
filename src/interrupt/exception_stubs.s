@@ -193,6 +193,52 @@ irq_handler_0:
     # Return from interrupt
     iretq
 
+# IRQ1 = Keyboard (vector 33)
+.global irq_handler_1
+irq_handler_1:
+    # Clear direction flag for string operations
+    cld
+    
+    # Save all general purpose registers
+    pushq %rax
+    pushq %rbx
+    pushq %rcx
+    pushq %rdx
+    pushq %rsi
+    pushq %rdi
+    pushq %rbp
+    pushq %r8
+    pushq %r9
+    pushq %r10
+    pushq %r11
+    pushq %r12
+    pushq %r13
+    pushq %r14
+    pushq %r15
+    
+    # Call C keyboard handler
+    call keyboard_irq_handler
+    
+    # Restore all general purpose registers
+    popq %r15
+    popq %r14
+    popq %r13
+    popq %r12
+    popq %r11
+    popq %r10
+    popq %r9
+    popq %r8
+    popq %rbp
+    popq %rdi
+    popq %rsi
+    popq %rdx
+    popq %rcx
+    popq %rbx
+    popq %rax
+    
+    # Return from interrupt
+    iretq
+
 # Mark stack as non-executable to suppress linker warning
 .section .note.GNU-stack, "", @progbits
 

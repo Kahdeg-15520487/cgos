@@ -106,5 +106,6 @@ extern void exception_handler_19(void);  // SIMD Floating Point
 
 // IRQ handlers (hardware interrupts)
 extern void irq_handler_0(void);  // Timer (IRQ0, vector 32)
+extern void irq_handler_1(void);  // Keyboard (IRQ1, vector 33)
 
 #endif // INTERRUPT_H

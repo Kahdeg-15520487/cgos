@@ -12,6 +12,7 @@ void setup_graphic(volatile struct limine_framebuffer_request *framebuffer_reque
 void draw_char(int x, int y, char c, uint32_t color);
 void draw_string(int x, int y, const char *str, uint32_t color);
 void kprintf(int x,int y, const char *format, ...);
+int kprintf_to_buffer(char *buf, int size, const char *format, ...);
 
 // primitive functions
 void clear_screen(uint32_t color);

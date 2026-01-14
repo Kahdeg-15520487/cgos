@@ -58,6 +58,8 @@ override CPPFLAGS := \
     -I src/debug \
     -I src/interrupt \
     -I src/timer \
+    -I src/network \
+    -I src/shell \
     -I limine-bin \
     $(CPPFLAGS) \
     -DLIMINE_API_REVISION=3 \

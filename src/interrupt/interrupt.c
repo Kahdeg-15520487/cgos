@@ -57,6 +57,8 @@ void interrupt_init(void) {
     // Set up IRQ handlers (hardware interrupts, remapped to vectors 32-47)
     // IRQ0 = Timer at vector 32
     idt_set_gate(32, (uint64_t)irq_handler_0, KERNEL_CODE_SELECTOR, IDT_TYPE_INTERRUPT_GATE);
+    // IRQ1 = Keyboard at vector 33
+    idt_set_gate(33, (uint64_t)irq_handler_1, KERNEL_CODE_SELECTOR, IDT_TYPE_INTERRUPT_GATE);
     
     // Load the IDT
     asm volatile("lidt %0" :: "m"(idt_ptr));
