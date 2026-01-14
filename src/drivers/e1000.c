@@ -4,6 +4,7 @@
 #include "../memory/vmm.h"
 #include "../graphic/graphic.h"
 #include "../debug/debug.h"
+#include "../timer/timer.h"
 
 static e1000_device_t e1000_dev;
 static bool e1000_initialized = false;
@@ -61,7 +62,7 @@ void e1000_reset(e1000_device_t *dev) {
     
     DEBUG_INFO("E1000: Reset command sent, waiting...\n");
     
-    // Wait for reset to complete (simple delay)
+    // Wait for reset to complete (busy-wait, timer disabled)
     for (volatile int i = 0; i < 100000; i++);
     
     DEBUG_INFO("E1000: Disabling interrupts...\n");

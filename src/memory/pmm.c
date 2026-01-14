@@ -61,6 +61,9 @@ bool physical_memory_init(struct limine_memmap_response *memmap) {
         }
         
         // Skip other usable regions for now - we'll add them later if needed
+        // TODO: Multi-region PMM support requires refactoring the bitmap allocator
+        //       to track multiple disjoint memory regions. For now, we only use
+        //       the largest region, which is typically sufficient for most use cases.
         if (entry->type == LIMINE_MEMMAP_USABLE) {
             continue;
         }

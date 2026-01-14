@@ -57,6 +57,7 @@ override CPPFLAGS := \
     -I src/drivers \
     -I src/debug \
     -I src/interrupt \
+    -I src/timer \
     -I limine-bin \
     $(CPPFLAGS) \
     -DLIMINE_API_REVISION=3 \

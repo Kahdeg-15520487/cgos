@@ -32,6 +32,7 @@ typedef struct socket {
     bool bound;
     bool connected;
     bool listening;
+    uint16_t bound_port;  // Port number bound to this socket
     union {
         void *udp_socket;
         void *tcp_connection;

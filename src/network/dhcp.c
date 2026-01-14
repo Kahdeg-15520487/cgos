@@ -20,8 +20,13 @@ static int dhcp_client_count = 0;
 // Simple random number for transaction ID
 static uint32_t dhcp_xid_counter = 1;
 
-// Simple time counter (should be integrated with actual timer system)
+// Simple time counter (timer disabled due to triple fault)
+// TODO: Use timer_get_seconds() when timer is fixed
 static uint32_t dhcp_time = 0;
+
+static uint32_t dhcp_get_time(void) {
+    return dhcp_time++;
+}
 
 uint32_t dhcp_generate_xid(void) {
     return dhcp_xid_counter++;
@@ -373,7 +378,7 @@ void dhcp_client_process_packet(dhcp_client_t *client, dhcp_packet_t *packet, si
                 client->iface->subnet_mask = client->subnet_mask;
                 client->iface->gateway = client->gateway;
                 client->state = DHCP_STATE_BOUND;
-                client->lease_start_time = dhcp_time;
+                client->lease_start_time = dhcp_get_time();
                 client->active = true;
                 
                 DEBUG_INFO("DHCP: Assigned IP=%d.%d.%d.%d\\n",
@@ -420,7 +425,44 @@ int dhcp_client_release(dhcp_client_t *client) {
         return -1;
     }
     
-    // Send DHCP RELEASE message (implementation would go here)
+    // Send DHCP RELEASE message
+    dhcp_packet_t packet = {0};
+    
+    packet.op = 1;      // BOOTREQUEST
+    packet.htype = 1;   // Ethernet
+    packet.hlen = 6;
+    packet.hops = 0;
+    packet.xid = htonl(client->transaction_id);
+    packet.secs = 0;
+    packet.flags = 0;   // No broadcast for release
+    packet.ciaddr = htonl(client->iface->ip_address);  // Client IP
+    packet.yiaddr = 0;
+    packet.siaddr = 0;
+    packet.giaddr = 0;
+    packet.magic = htonl(DHCP_MAGIC_COOKIE);
+    
+    for (int i = 0; i < 6; i++) {
+        packet.chaddr[i] = client->iface->mac_address[i];
+    }
+    
+    // Add DHCP options
+    int opt_offset = 0;
+    uint8_t msg_type = DHCP_RELEASE;
+    dhcp_add_option(packet.options, &opt_offset, DHCP_OPTION_MSG_TYPE, 1, &msg_type);
+    
+    // Add server identifier
+    uint32_t server_id = htonl(client->server_ip);
+    dhcp_add_option(packet.options, &opt_offset, DHCP_OPTION_SERVER_ID, 4, &server_id);
+    
+    // End option
+    dhcp_add_option(packet.options, &opt_offset, DHCP_OPTION_END, 0, NULL);
+    
+    size_t packet_size = sizeof(dhcp_packet_t) - sizeof(packet.options) + opt_offset + 1;
+    
+    // Send to DHCP server (unicast)
+    udp_send_packet(client->iface, client->server_ip, 68, 67, &packet, packet_size);
+    
+    DEBUG_INFO("DHCP: Sent RELEASE packet\n");
     
     // Reset client state
     client->iface->ip_address = 0;
@@ -437,7 +479,7 @@ void dhcp_client_update(dhcp_client_t *client) {
         return;
     }
     
-    uint32_t elapsed = dhcp_time - client->lease_start_time;
+    uint32_t elapsed = dhcp_get_time() - client->lease_start_time;
     
     switch (client->state) {
         case DHCP_STATE_BOUND:
@@ -471,6 +513,9 @@ void dhcp_client_update(dhcp_client_t *client) {
     }
 }
 
+// Testing/simulation functions - only available in debug builds
+#ifdef DHCP_DEBUG
+
 // Helper function to simulate DHCP server response for testing
 int dhcp_simulate_offer(dhcp_client_t *client, uint32_t offered_ip, uint32_t server_ip) {
     if (!client) {
@@ -499,8 +544,10 @@ int dhcp_simulate_ack(dhcp_client_t *client) {
     client->iface->subnet_mask = client->subnet_mask;
     client->iface->gateway = client->gateway;
     client->state = DHCP_STATE_BOUND;
-    client->lease_start_time = dhcp_time;
+    client->lease_start_time = dhcp_get_time();
     client->active = true;
     
     return 0;
 }
+
+#endif // DHCP_DEBUG

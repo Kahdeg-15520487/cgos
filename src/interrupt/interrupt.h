@@ -104,4 +104,7 @@ extern void exception_handler_17(void);  // Alignment Check
 extern void exception_handler_18(void);  // Machine Check
 extern void exception_handler_19(void);  // SIMD Floating Point
 
+// IRQ handlers (hardware interrupts)
+extern void irq_handler_0(void);  // Timer (IRQ0, vector 32)
+
 #endif // INTERRUPT_H

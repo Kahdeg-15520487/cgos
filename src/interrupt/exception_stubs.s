@@ -113,10 +113,10 @@ exception_common_stub_with_error:
     popq %rbx
     popq %rax
     
-    # Remove exception number (error code remains for iretq)
-    addq $8, %rsp
+    # Remove exception number AND error code (iretq does NOT pop error code)
+    addq $16, %rsp
     
-    # Return from interrupt (this will also pop the error code)
+    # Return from interrupt
     iretq
 
 # Define exception handlers
@@ -139,5 +139,60 @@ EXCEPTION_HANDLER_WITH_ERROR 17  # Alignment Check
 EXCEPTION_HANDLER 18        # Machine Check
 EXCEPTION_HANDLER 19        # SIMD Floating Point
 
+# IRQ handler stubs (hardware interrupts)
+# IRQ0 = Timer (vector 32)
+# Note: Kernel is compiled with -mno-red-zone, so no red zone handling needed
+.global irq_handler_0
+irq_handler_0:
+    # Clear direction flag for string operations
+    cld
+    
+    # Save all general purpose registers
+    pushq %rax
+    pushq %rbx
+    pushq %rcx
+    pushq %rdx
+    pushq %rsi
+    pushq %rdi
+    pushq %rbp
+    pushq %r8
+    pushq %r9
+    pushq %r10
+    pushq %r11
+    pushq %r12
+    pushq %r13
+    pushq %r14
+    pushq %r15
+    
+    # Stack alignment: CPU pushed 40 bytes (5 regs), we pushed 120 bytes (15 regs)
+    # Total: 160 bytes = 10 * 16, but 40 mod 16 = 8, so after 120 we're at 160 mod 16 = 0
+    # Wait: CPU pushes SS(8), RSP(8), RFLAGS(8), CS(8), RIP(8) = 40 bytes total
+    # 40 mod 16 = 8 (misaligned), 40 + 120 = 160, 160 mod 16 = 0 (aligned!)
+    # So we should be aligned for the call
+    
+    # Call C timer handler
+    call timer_irq_handler
+    
+    # Restore all general purpose registers
+    popq %r15
+    popq %r14
+    popq %r13
+    popq %r12
+    popq %r11
+    popq %r10
+    popq %r9
+    popq %r8
+    popq %rbp
+    popq %rdi
+    popq %rsi
+    popq %rdx
+    popq %rcx
+    popq %rbx
+    popq %rax
+    
+    # Return from interrupt
+    iretq
+
 # Mark stack as non-executable to suppress linker warning
 .section .note.GNU-stack, "", @progbits
+

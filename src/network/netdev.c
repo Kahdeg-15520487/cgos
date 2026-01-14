@@ -3,6 +3,7 @@
 #include "../memory/memory.h"
 #include "../drivers/e1000.h"
 #include "../pci/pci.h"
+#include "../debug/debug.h"
 
 // Simple string functions for kernel
 static int netdev_strcmp(const char *s1, const char *s2) {
@@ -203,8 +204,23 @@ network_interface_t *netdev_get_by_name(const char *name) {
 }
 
 void netdev_list(void) {
-    // This would list network devices - implement based on your display system
-    // For now, just a placeholder
+    DEBUG_INFO("=== Network Interfaces ===\n");
+    for (int i = 0; i < MAX_NETWORK_INTERFACES; i++) {
+        network_interface_t *iface = network_get_interface(i);
+        if (iface && iface->name[0] != '\0') {
+            DEBUG_INFO("  %s: %s MAC=%02x:%02x:%02x:%02x:%02x:%02x IP=%d.%d.%d.%d\n",
+                      iface->name,
+                      iface->active ? "UP" : "DOWN",
+                      iface->mac_address[0], iface->mac_address[1],
+                      iface->mac_address[2], iface->mac_address[3],
+                      iface->mac_address[4], iface->mac_address[5],
+                      (iface->ip_address >> 24) & 0xFF,
+                      (iface->ip_address >> 16) & 0xFF,
+                      (iface->ip_address >> 8) & 0xFF,
+                      iface->ip_address & 0xFF);
+        }
+    }
+    DEBUG_INFO("=== End Network Interfaces ===\n");
 }
 
 int loopback_init(void) {

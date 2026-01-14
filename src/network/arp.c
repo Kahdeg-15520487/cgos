@@ -1,12 +1,18 @@
 #include "arp.h"
 #include "ethernet.h"
 #include "../memory/memory.h"
+#include "../debug/debug.h"
 
 static arp_entry_t arp_table[ARP_TABLE_SIZE];
 static int arp_table_entries = 0;
 
-// Simple timestamp counter (you might want to implement proper timing)
-static uint32_t current_time = 0;
+// Simple timestamp counter (timer disabled due to triple fault)
+// TODO: Use timer_get_ticks() when timer is fixed
+static uint32_t arp_time = 0;
+
+static uint32_t arp_get_time(void) {
+    return arp_time++;
+}
 
 int arp_init(void) {
     // Initialize ARP table
@@ -111,7 +117,7 @@ int arp_add_entry(uint32_t ip_address, uint8_t *mac_address) {
 
     // Find empty slot or oldest entry
     int slot = -1;
-    uint32_t oldest_time = current_time;
+    uint32_t oldest_time = arp_get_time();
     
     for (int i = 0; i < ARP_TABLE_SIZE; i++) {
         if (!arp_table[i].valid) {
@@ -131,7 +137,7 @@ int arp_add_entry(uint32_t ip_address, uint8_t *mac_address) {
     // Add entry
     arp_table[slot].ip_address = ip_address;
     memcpy(arp_table[slot].mac_address, mac_address, 6);
-    arp_table[slot].timestamp = current_time++;
+    arp_table[slot].timestamp = arp_get_time();
     arp_table[slot].valid = true;
 
     if (slot >= arp_table_entries) {
@@ -150,7 +156,7 @@ void arp_update_entry(uint32_t ip_address, uint8_t *mac_address) {
     for (int i = 0; i < ARP_TABLE_SIZE; i++) {
         if (arp_table[i].valid && arp_table[i].ip_address == ip_address) {
             memcpy(arp_table[i].mac_address, mac_address, 6);
-            arp_table[i].timestamp = current_time++;
+            arp_table[i].timestamp = arp_get_time();
             return;
         }
     }
@@ -160,6 +166,19 @@ void arp_update_entry(uint32_t ip_address, uint8_t *mac_address) {
 }
 
 void arp_print_table(void) {
-    // This would print the ARP table - implement based on your graphics system
-    // For now, just a placeholder
+    DEBUG_INFO("=== ARP Table ===\n");
+    DEBUG_INFO("Entries: %d\n", arp_table_entries);
+    
+    for (int i = 0; i < ARP_TABLE_SIZE; i++) {
+        if (arp_table[i].valid) {
+            uint32_t ip = arp_table[i].ip_address;
+            uint8_t *mac = arp_table[i].mac_address;
+            DEBUG_INFO("  %d.%d.%d.%d -> %02x:%02x:%02x:%02x:%02x:%02x (age: %u)\n",
+                      (ip >> 24) & 0xFF, (ip >> 16) & 0xFF,
+                      (ip >> 8) & 0xFF, ip & 0xFF,
+                      mac[0], mac[1], mac[2], mac[3], mac[4], mac[5],
+                      arp_get_time() - arp_table[i].timestamp);
+        }
+    }
+    DEBUG_INFO("=== End ARP Table ===\n");
 }

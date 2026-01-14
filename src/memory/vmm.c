@@ -271,7 +271,14 @@ void* vmm_map_mmio(uint64_t physical_addr, size_t size) {
 }
 
 void vmm_unmap_page(uint64_t virtual_addr) {
-    page_table_t *pml4 = current_context->pml4;
+    if (hhdm_offset == 0) {
+        DEBUG_ERROR("HHDM not initialized! Cannot unmap page.\n");
+        return;
+    }
+    
+    // Get PML4 via HHDM (convert physical CR3 to virtual)
+    uint64_t cr3_phys = current_context->cr3_value & ~0xFFFULL;
+    page_table_t *pml4 = (page_table_t*)(cr3_phys + hhdm_offset);
     
     // Extract page table indices
     int pml4_idx = PML4_INDEX(virtual_addr);
@@ -279,15 +286,18 @@ void vmm_unmap_page(uint64_t virtual_addr) {
     int pd_idx = PD_INDEX(virtual_addr);
     int pt_idx = PT_INDEX(virtual_addr);
     
-    // Navigate to the page table entry
+    // Navigate to the page table entry (using HHDM for all table accesses)
     if (!(pml4->entries[pml4_idx] & PAGE_PRESENT)) return;
-    page_table_t *pdp = (page_table_t*)(pml4->entries[pml4_idx] & ~PAGE_MASK);
+    uint64_t pdp_phys = pml4->entries[pml4_idx] & ~PAGE_MASK;
+    page_table_t *pdp = (page_table_t*)(pdp_phys + hhdm_offset);
     
     if (!(pdp->entries[pdp_idx] & PAGE_PRESENT)) return;
-    page_table_t *pd = (page_table_t*)(pdp->entries[pdp_idx] & ~PAGE_MASK);
+    uint64_t pd_phys = pdp->entries[pdp_idx] & ~PAGE_MASK;
+    page_table_t *pd = (page_table_t*)(pd_phys + hhdm_offset);
     
     if (!(pd->entries[pd_idx] & PAGE_PRESENT)) return;
-    page_table_t *pt = (page_table_t*)(pd->entries[pd_idx] & ~PAGE_MASK);
+    uint64_t pt_phys = pd->entries[pd_idx] & ~PAGE_MASK;
+    page_table_t *pt = (page_table_t*)(pt_phys + hhdm_offset);
     
     // Clear the page table entry
     pt->entries[pt_idx] = 0;
@@ -306,7 +316,14 @@ void vmm_unmap(void *virtual_addr, size_t size) {
 }
 
 uint64_t vmm_get_physical_addr(uint64_t virtual_addr) {
-    page_table_t *pml4 = current_context->pml4;
+    if (hhdm_offset == 0) {
+        DEBUG_ERROR("HHDM not initialized! Cannot get physical address.\n");
+        return 0;
+    }
+    
+    // Get PML4 via HHDM (convert physical CR3 to virtual)
+    uint64_t cr3_phys = current_context->cr3_value & ~0xFFFULL;
+    page_table_t *pml4 = (page_table_t*)(cr3_phys + hhdm_offset);
     
     // Extract page table indices
     int pml4_idx = PML4_INDEX(virtual_addr);
@@ -314,15 +331,18 @@ uint64_t vmm_get_physical_addr(uint64_t virtual_addr) {
     int pd_idx = PD_INDEX(virtual_addr);
     int pt_idx = PT_INDEX(virtual_addr);
     
-    // Navigate through page tables
+    // Navigate through page tables (using HHDM for all table accesses)
     if (!(pml4->entries[pml4_idx] & PAGE_PRESENT)) return 0;
-    page_table_t *pdp = (page_table_t*)(pml4->entries[pml4_idx] & ~PAGE_MASK);
+    uint64_t pdp_phys = pml4->entries[pml4_idx] & ~PAGE_MASK;
+    page_table_t *pdp = (page_table_t*)(pdp_phys + hhdm_offset);
     
     if (!(pdp->entries[pdp_idx] & PAGE_PRESENT)) return 0;
-    page_table_t *pd = (page_table_t*)(pdp->entries[pdp_idx] & ~PAGE_MASK);
+    uint64_t pd_phys = pdp->entries[pdp_idx] & ~PAGE_MASK;
+    page_table_t *pd = (page_table_t*)(pd_phys + hhdm_offset);
     
     if (!(pd->entries[pd_idx] & PAGE_PRESENT)) return 0;
-    page_table_t *pt = (page_table_t*)(pd->entries[pd_idx] & ~PAGE_MASK);
+    uint64_t pt_phys = pd->entries[pd_idx] & ~PAGE_MASK;
+    page_table_t *pt = (page_table_t*)(pt_phys + hhdm_offset);
     
     if (!(pt->entries[pt_idx] & PAGE_PRESENT)) return 0;
     

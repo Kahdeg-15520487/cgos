@@ -93,7 +93,8 @@ int socket_bind(int sockfd, const sockaddr_t *addr, int addrlen) {
             break;
             
         case SOCK_STREAM:
-            // For TCP, binding is handled differently
+            // For TCP, binding stores the port for later listen
+            sock->bound_port = port;
             sock->bound = true;
             return 0;
     }
@@ -109,8 +110,8 @@ int socket_listen(int sockfd, int backlog) {
         return -1;
     }
 
-    // Extract port from bound address (simplified)
-    uint16_t port = 80; // Default port, should be extracted from bind
+    // Use the port from bind()
+    uint16_t port = sock->bound_port;
     
     if (tcp_listen(port) == NET_SUCCESS) {
         sock->listening = true;

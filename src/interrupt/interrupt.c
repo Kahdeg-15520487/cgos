@@ -49,6 +49,10 @@ void interrupt_init(void) {
     idt_set_gate(EXCEPTION_MACHINE_CHECK, (uint64_t)exception_handler_18, 0x08, IDT_TYPE_INTERRUPT_GATE);
     idt_set_gate(EXCEPTION_SIMD_FLOATING_POINT, (uint64_t)exception_handler_19, 0x08, IDT_TYPE_INTERRUPT_GATE);
     
+    // Set up IRQ handlers (hardware interrupts, remapped to vectors 32-47)
+    // IRQ0 = Timer at vector 32
+    idt_set_gate(32, (uint64_t)irq_handler_0, 0x08, IDT_TYPE_INTERRUPT_GATE);
+    
     // Load the IDT
     asm volatile("lidt %0" :: "m"(idt_ptr));
     

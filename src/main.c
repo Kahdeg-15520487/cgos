@@ -14,6 +14,7 @@
 #include "network/dhcp.h"
 #include "debug/debug.h"
 #include "interrupt/interrupt.h"
+#include "timer/timer.h"
 
 // Set the base revision to 3, this is recommended as this is the latest
 // base revision described by the Limine boot protocol specification.
@@ -137,6 +138,13 @@ void kmain(void) {
         interrupt_init();
         kprintf(10, 170, "Interrupt system initialized successfully");
         DEBUG_INFO("Interrupt system initialization completed\n");
+        
+        // Timer system disabled - needs more debugging
+        // TODO: Timer interrupts cause triple fault, need to investigate:
+        // - IDT setup appears correct
+        // - Assembly handler has proper register save/restore
+        // - Issue may be with GDT selector or TSS configuration
+        // timer_init();
         
         // Test physical memory allocation
         void *page1 = physical_alloc_page();
