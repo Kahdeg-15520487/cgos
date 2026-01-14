@@ -62,8 +62,8 @@ void e1000_reset(e1000_device_t *dev) {
     
     DEBUG_INFO("E1000: Reset command sent, waiting...\n");
     
-    // Wait for reset to complete (busy-wait, timer disabled)
-    for (volatile int i = 0; i < 100000; i++);
+    // Wait for reset to complete using timer
+    timer_sleep_ms(10);
     
     DEBUG_INFO("E1000: Disabling interrupts...\n");
     

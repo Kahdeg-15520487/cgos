@@ -4,6 +4,7 @@
 #include "ip.h"
 #include "ethernet.h"
 #include "../debug/debug.h"
+#include "../timer/timer.h"
 #include <stddef.h>
 
 // Magic cookie for DHCP packets
@@ -20,12 +21,9 @@ static int dhcp_client_count = 0;
 // Simple random number for transaction ID
 static uint32_t dhcp_xid_counter = 1;
 
-// Simple time counter (timer disabled due to triple fault)
-// TODO: Use timer_get_seconds() when timer is fixed
-static uint32_t dhcp_time = 0;
-
+// Get current time in seconds from timer system
 static uint32_t dhcp_get_time(void) {
-    return dhcp_time++;
+    return timer_get_seconds();
 }
 
 uint32_t dhcp_generate_xid(void) {

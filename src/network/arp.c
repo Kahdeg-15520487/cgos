@@ -1,17 +1,15 @@
 #include "arp.h"
 #include "ethernet.h"
 #include "../memory/memory.h"
+#include "../timer/timer.h"
 #include "../debug/debug.h"
 
 static arp_entry_t arp_table[ARP_TABLE_SIZE];
 static int arp_table_entries = 0;
 
-// Simple timestamp counter (timer disabled due to triple fault)
-// TODO: Use timer_get_ticks() when timer is fixed
-static uint32_t arp_time = 0;
-
+// Get current timestamp from timer system
 static uint32_t arp_get_time(void) {
-    return arp_time++;
+    return (uint32_t)timer_get_ticks();
 }
 
 int arp_init(void) {

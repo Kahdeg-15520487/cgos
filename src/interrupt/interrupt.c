@@ -29,29 +29,34 @@ void interrupt_init(void) {
     idt_ptr.limit = sizeof(idt) - 1;
     idt_ptr.base = (uint64_t)idt;
     
+    // Limine GDT layout: 64-bit code segment is at offset 0x28 (40)
+    // GDT: null(0), 16-bit code(8), 16-bit data(16), 32-bit code(24), 
+    //      32-bit data(32), 64-bit code(40), 64-bit data(48)
+    #define KERNEL_CODE_SELECTOR 0x28
+    
     // Set up exception handlers
-    idt_set_gate(EXCEPTION_DIVIDE_ERROR, (uint64_t)exception_handler_0, 0x08, IDT_TYPE_INTERRUPT_GATE);
-    idt_set_gate(EXCEPTION_DEBUG, (uint64_t)exception_handler_1, 0x08, IDT_TYPE_INTERRUPT_GATE);
-    idt_set_gate(EXCEPTION_NMI, (uint64_t)exception_handler_2, 0x08, IDT_TYPE_INTERRUPT_GATE);
-    idt_set_gate(EXCEPTION_BREAKPOINT, (uint64_t)exception_handler_3, 0x08, IDT_TYPE_INTERRUPT_GATE);
-    idt_set_gate(EXCEPTION_OVERFLOW, (uint64_t)exception_handler_4, 0x08, IDT_TYPE_INTERRUPT_GATE);
-    idt_set_gate(EXCEPTION_BOUND_RANGE, (uint64_t)exception_handler_5, 0x08, IDT_TYPE_INTERRUPT_GATE);
-    idt_set_gate(EXCEPTION_INVALID_OPCODE, (uint64_t)exception_handler_6, 0x08, IDT_TYPE_INTERRUPT_GATE);
-    idt_set_gate(EXCEPTION_DEVICE_NOT_AVAILABLE, (uint64_t)exception_handler_7, 0x08, IDT_TYPE_INTERRUPT_GATE);
-    idt_set_gate(EXCEPTION_DOUBLE_FAULT, (uint64_t)exception_handler_8, 0x08, IDT_TYPE_INTERRUPT_GATE);
-    idt_set_gate(EXCEPTION_INVALID_TSS, (uint64_t)exception_handler_10, 0x08, IDT_TYPE_INTERRUPT_GATE);
-    idt_set_gate(EXCEPTION_SEGMENT_NOT_PRESENT, (uint64_t)exception_handler_11, 0x08, IDT_TYPE_INTERRUPT_GATE);
-    idt_set_gate(EXCEPTION_STACK_FAULT, (uint64_t)exception_handler_12, 0x08, IDT_TYPE_INTERRUPT_GATE);
-    idt_set_gate(EXCEPTION_GENERAL_PROTECTION, (uint64_t)exception_handler_13, 0x08, IDT_TYPE_INTERRUPT_GATE);
-    idt_set_gate(EXCEPTION_PAGE_FAULT, (uint64_t)exception_handler_14, 0x08, IDT_TYPE_INTERRUPT_GATE);
-    idt_set_gate(EXCEPTION_FLOATING_POINT, (uint64_t)exception_handler_16, 0x08, IDT_TYPE_INTERRUPT_GATE);
-    idt_set_gate(EXCEPTION_ALIGNMENT_CHECK, (uint64_t)exception_handler_17, 0x08, IDT_TYPE_INTERRUPT_GATE);
-    idt_set_gate(EXCEPTION_MACHINE_CHECK, (uint64_t)exception_handler_18, 0x08, IDT_TYPE_INTERRUPT_GATE);
-    idt_set_gate(EXCEPTION_SIMD_FLOATING_POINT, (uint64_t)exception_handler_19, 0x08, IDT_TYPE_INTERRUPT_GATE);
+    idt_set_gate(EXCEPTION_DIVIDE_ERROR, (uint64_t)exception_handler_0, KERNEL_CODE_SELECTOR, IDT_TYPE_INTERRUPT_GATE);
+    idt_set_gate(EXCEPTION_DEBUG, (uint64_t)exception_handler_1, KERNEL_CODE_SELECTOR, IDT_TYPE_INTERRUPT_GATE);
+    idt_set_gate(EXCEPTION_NMI, (uint64_t)exception_handler_2, KERNEL_CODE_SELECTOR, IDT_TYPE_INTERRUPT_GATE);
+    idt_set_gate(EXCEPTION_BREAKPOINT, (uint64_t)exception_handler_3, KERNEL_CODE_SELECTOR, IDT_TYPE_INTERRUPT_GATE);
+    idt_set_gate(EXCEPTION_OVERFLOW, (uint64_t)exception_handler_4, KERNEL_CODE_SELECTOR, IDT_TYPE_INTERRUPT_GATE);
+    idt_set_gate(EXCEPTION_BOUND_RANGE, (uint64_t)exception_handler_5, KERNEL_CODE_SELECTOR, IDT_TYPE_INTERRUPT_GATE);
+    idt_set_gate(EXCEPTION_INVALID_OPCODE, (uint64_t)exception_handler_6, KERNEL_CODE_SELECTOR, IDT_TYPE_INTERRUPT_GATE);
+    idt_set_gate(EXCEPTION_DEVICE_NOT_AVAILABLE, (uint64_t)exception_handler_7, KERNEL_CODE_SELECTOR, IDT_TYPE_INTERRUPT_GATE);
+    idt_set_gate(EXCEPTION_DOUBLE_FAULT, (uint64_t)exception_handler_8, KERNEL_CODE_SELECTOR, IDT_TYPE_INTERRUPT_GATE);
+    idt_set_gate(EXCEPTION_INVALID_TSS, (uint64_t)exception_handler_10, KERNEL_CODE_SELECTOR, IDT_TYPE_INTERRUPT_GATE);
+    idt_set_gate(EXCEPTION_SEGMENT_NOT_PRESENT, (uint64_t)exception_handler_11, KERNEL_CODE_SELECTOR, IDT_TYPE_INTERRUPT_GATE);
+    idt_set_gate(EXCEPTION_STACK_FAULT, (uint64_t)exception_handler_12, KERNEL_CODE_SELECTOR, IDT_TYPE_INTERRUPT_GATE);
+    idt_set_gate(EXCEPTION_GENERAL_PROTECTION, (uint64_t)exception_handler_13, KERNEL_CODE_SELECTOR, IDT_TYPE_INTERRUPT_GATE);
+    idt_set_gate(EXCEPTION_PAGE_FAULT, (uint64_t)exception_handler_14, KERNEL_CODE_SELECTOR, IDT_TYPE_INTERRUPT_GATE);
+    idt_set_gate(EXCEPTION_FLOATING_POINT, (uint64_t)exception_handler_16, KERNEL_CODE_SELECTOR, IDT_TYPE_INTERRUPT_GATE);
+    idt_set_gate(EXCEPTION_ALIGNMENT_CHECK, (uint64_t)exception_handler_17, KERNEL_CODE_SELECTOR, IDT_TYPE_INTERRUPT_GATE);
+    idt_set_gate(EXCEPTION_MACHINE_CHECK, (uint64_t)exception_handler_18, KERNEL_CODE_SELECTOR, IDT_TYPE_INTERRUPT_GATE);
+    idt_set_gate(EXCEPTION_SIMD_FLOATING_POINT, (uint64_t)exception_handler_19, KERNEL_CODE_SELECTOR, IDT_TYPE_INTERRUPT_GATE);
     
     // Set up IRQ handlers (hardware interrupts, remapped to vectors 32-47)
     // IRQ0 = Timer at vector 32
-    idt_set_gate(32, (uint64_t)irq_handler_0, 0x08, IDT_TYPE_INTERRUPT_GATE);
+    idt_set_gate(32, (uint64_t)irq_handler_0, KERNEL_CODE_SELECTOR, IDT_TYPE_INTERRUPT_GATE);
     
     // Load the IDT
     asm volatile("lidt %0" :: "m"(idt_ptr));

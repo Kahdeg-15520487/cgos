@@ -139,12 +139,10 @@ void kmain(void) {
         kprintf(10, 170, "Interrupt system initialized successfully");
         DEBUG_INFO("Interrupt system initialization completed\n");
         
-        // Timer system disabled - needs more debugging
-        // TODO: Timer interrupts cause triple fault, need to investigate:
-        // - IDT setup appears correct
-        // - Assembly handler has proper register save/restore
-        // - Issue may be with GDT selector or TSS configuration
-        // timer_init();
+        // Initialize timer system (PIT + PIC)
+        kprintf(10, 185, "Initializing timer system...");
+        timer_init();
+        kprintf(10, 200, "Timer system initialized successfully");
         
         // Test physical memory allocation
         void *page1 = physical_alloc_page();
