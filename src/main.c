@@ -85,6 +85,62 @@ void srand(unsigned int seed)
     next = seed;
 }
 
+// ============== Thread Entry Functions ==============
+
+// Shell thread - runs the interactive shell
+static void shell_thread_entry(void *arg) {
+    (void)arg;
+    DEBUG_INFO("Shell thread started\n");
+    shell_init();
+    shell_run();  // This runs forever
+}
+
+// Test worker thread - demonstrates multi-threading
+static void worker_thread_entry(void *arg) {
+    int id = (int)(uintptr_t)arg;
+    int count = 0;
+    
+    DEBUG_INFO("Worker %d started\n", id);
+    
+    while (1) {
+        count++;
+        
+        // Print status every 5 seconds
+        if (count % 5000 == 0) {
+            DEBUG_INFO("Worker %d: tick %d\n", id, count / 1000);
+        }
+        
+        // Simulate some work, then sleep
+        // This makes the worker I/O-bound (should keep/boost priority)
+        thread_sleep_ms(1);
+    }
+}
+
+// CPU-intensive worker - demonstrates priority demotion
+static void cpu_worker_entry(void *arg) {
+    int id = (int)(uintptr_t)arg;
+    uint64_t iterations = 0;
+    
+    DEBUG_INFO("CPU Worker %d started (will be demoted due to high CPU usage)\n", id);
+    
+    while (1) {
+        // Busy loop - no yielding or sleeping
+        // This should cause the scheduler to demote this thread's priority
+        for (volatile int i = 0; i < 100000; i++) {
+            iterations++;
+        }
+        
+        // Occasionally print status to show we're running
+        if (iterations % 50000000 == 0) {
+            thread_t *self = thread_current();
+            if (self) {
+                DEBUG_INFO("CPU Worker %d: %lu iterations, priority=%d, CPU=%d%%\n", 
+                          id, iterations, self->priority, self->avg_cpu_usage);
+            }
+        }
+    }
+}
+
 // The following will be our kernel's entry point.
 // If renaming kmain() to something else, make sure to change the
 // linker script accordingly.
@@ -408,12 +464,44 @@ void kmain(void) {
     DEBUG_INFO("Initializing keyboard driver...\n");
     keyboard_init();
     
-    // Initialize and run the shell
-    kprintf(10, 765, "Starting interactive shell...");
-    DEBUG_INFO("Starting shell...\n");
-    shell_init();
-    shell_run();  // This runs forever, handles keyboard input
+    // ============== Create Kernel Threads ==============
     
-    // shell_run never returns, but just in case:
+    kprintf(10, 765, "Creating kernel threads...");
+    DEBUG_INFO("Creating kernel threads...\n");
+    
+    // Create shell thread (high priority for responsiveness)
+    thread_t *shell_thread = thread_create_priority("shell", shell_thread_entry, NULL, PRIORITY_HIGH);
+    if (shell_thread) {
+        scheduler_add(shell_thread);
+        DEBUG_INFO("Created shell thread (TID=%d, priority=HIGH)\n", shell_thread->tid);
+    }
+    
+    // Create I/O-bound worker threads (should maintain priority)
+    thread_t *worker1 = thread_create("worker1", worker_thread_entry, (void*)1);
+    thread_t *worker2 = thread_create("worker2", worker_thread_entry, (void*)2);
+    if (worker1) {
+        scheduler_add(worker1);
+        DEBUG_INFO("Created worker1 thread (TID=%d)\n", worker1->tid);
+    }
+    if (worker2) {
+        scheduler_add(worker2);
+        DEBUG_INFO("Created worker2 thread (TID=%d)\n", worker2->tid);
+    }
+    
+    // Create CPU-bound worker (should be demoted over time)
+    thread_t *cpu_worker = thread_create("cpu_hog", cpu_worker_entry, (void*)1);
+    if (cpu_worker) {
+        scheduler_add(cpu_worker);
+        DEBUG_INFO("Created cpu_hog thread (TID=%d)\n", cpu_worker->tid);
+    }
+    
+    kprintf(10, 780, "Starting multi-threaded scheduler...");
+    DEBUG_INFO("Starting scheduler with threads...\n");
+    
+    // Start the scheduler - this never returns!
+    // Context switching is now deferred from timer IRQ to fix keyboard issue
+    scheduler_start();
+    
+    // scheduler_start never returns, but just in case:
     hcf();
 }

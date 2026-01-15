@@ -17,6 +17,7 @@
 #include "../drivers/ata.h"
 #include "../graphic/graphic.h"
 #include "../debug/debug.h"
+#include "../sched/thread.h"
 
 // Command buffer
 static char cmd_buffer[SHELL_BUFFER_SIZE];
@@ -675,11 +676,30 @@ void shell_run(void) {
     network_interface_t *eth = network_get_interface(1);  // eth0
     dhcp_client_t *dhcp = eth ? dhcp_get_client(eth) : NULL;
     
+    static uint32_t loop_count = 0;
+    
+    DEBUG_INFO("Shell loop starting...\n");
+    
     while (1) {
+        loop_count++;
+        
+        // Debug: check RFLAGS every 100 iterations
+        if (loop_count % 100 == 0) {
+            uint64_t rflags;
+            __asm__ volatile("pushfq; pop %0" : "=r"(rflags));
+            DEBUG_INFO("Shell loop %u: IF=%d, has_key=%d\n", 
+                       loop_count, (int)((rflags >> 9) & 1), keyboard_has_key());
+        }
+        
         // Process keyboard input
         if (keyboard_has_key()) {
             char c = keyboard_get_char();
             shell_process_char(c);
+        } else {
+            // No key available - yield CPU to other threads
+            // This makes the shell appear I/O-bound (low CPU usage)
+            // and prevents priority demotion
+            thread_yield();
         }
         
         // Process network packets (keep DHCP working)
@@ -687,8 +707,5 @@ void shell_run(void) {
         if (dhcp) {
             dhcp_client_update(dhcp);
         }
-        
-        // Small delay to reduce CPU usage
-        __asm__ volatile("pause");
     }
 }

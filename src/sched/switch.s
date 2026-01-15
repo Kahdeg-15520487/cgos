@@ -61,7 +61,10 @@ context_switch:
     pop %r12
     pop %rbx
     pop %rbp
-    popfq                       # Restore RFLAGS (including interrupt flag)
+    popfq                       # Restore RFLAGS (note: IF may be 0 if preempted in IRQ)
+    sti                         # ALWAYS enable interrupts when resuming a thread
+                                # This is critical because context_switch may be called
+                                # from within interrupt handlers where IF=0
     
     # Return - this pops the return address from the new thread's stack
     # For a new thread, this will be thread_entry_wrapper

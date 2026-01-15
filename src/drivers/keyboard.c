@@ -42,6 +42,8 @@ static void buffer_put(char c) {
     if (next != buffer_tail) {
         key_buffer[buffer_head] = c;
         buffer_head = next;
+        DEBUG_INFO("buffer_put: char='%c' (0x%02x), head=%d, tail=%d\n", 
+                   (c >= 32 && c < 127) ? c : '?', (unsigned char)c, buffer_head, buffer_tail);
     }
 }
 
@@ -86,7 +88,13 @@ uint8_t keyboard_get_modifiers(void) {
 
 // Keyboard interrupt handler
 void keyboard_irq_handler(void) {
+    static int irq_count = 0;
+    irq_count++;
+    
     uint8_t scancode = inb(KEYBOARD_DATA_PORT);
+    
+    // Debug: log every keyboard IRQ
+    DEBUG_INFO("Keyboard IRQ #%d: scancode=0x%02x\n", irq_count, scancode);
     
     // Handle extended key prefix
     if (scancode == 0xE0) {

@@ -32,6 +32,10 @@ static bool scheduler_running = false;
 // Scheduling lock (simple spinlock for now - interrupts disabled)
 static volatile bool sched_lock = false;
 
+// Deferred reschedule flag - set by scheduler_tick(), checked by scheduler_yield()
+// This prevents context switching from inside the timer IRQ handler
+static volatile bool need_reschedule = false;
+
 // ============== Queue Operations ==============
 
 // Add thread to tail of a priority queue
@@ -329,8 +333,9 @@ void scheduler_tick(void) {
         // Put current thread back in ready queue
         enqueue_ready(current_thread);
         
-        // Pick next thread
-        schedule();
+        // Set flag to reschedule - DO NOT call schedule() here!
+        // Context switching inside IRQ handler corrupts stack
+        need_reschedule = true;
     }
 }
 
@@ -341,6 +346,9 @@ void scheduler_yield(void) {
         __asm__ volatile("sti");
         return;
     }
+    
+    // Clear deferred reschedule flag - we're handling it now
+    need_reschedule = false;
     
     // Calculate partial CPU usage (yielded early = low usage)
     if (current_thread != idle_thread && current_thread->time_slice_length > 0) {
