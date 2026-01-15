@@ -1,6 +1,7 @@
 #include "timer.h"
 #include "../debug/debug.h"
 #include "../interrupt/interrupt.h"
+#include "../sched/scheduler.h"
 
 // Global tick counter
 static volatile uint64_t ticks = 0;
@@ -87,6 +88,9 @@ void pic_clear_mask(uint8_t irq) {
 // Timer interrupt handler (called from assembly stub)
 void timer_irq_handler(void) {
     ticks++;
+    
+    // Let scheduler handle preemption
+    scheduler_tick();
     
     // Send EOI to PIC (inline to minimize overhead)
     outb(PIC1_COMMAND, PIC_EOI);

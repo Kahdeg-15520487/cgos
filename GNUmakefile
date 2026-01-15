@@ -62,6 +62,8 @@ override CPPFLAGS := \
     -I src/shell \
     -I src/fs \
     -I src/acpi \
+    -I src/gdt \
+    -I src/sched \
     -I limine-bin \
     $(CPPFLAGS) \
     -DLIMINE_API_REVISION=3 \

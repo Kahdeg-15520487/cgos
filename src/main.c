@@ -20,6 +20,9 @@
 #include "shell/shell.h"
 #include "fs/fat16.h"
 #include "acpi/acpi.h"
+#include "gdt/gdt.h"
+#include "sched/scheduler.h"
+#include "sched/thread.h"
 
 // Set the base revision to 3, this is recommended as this is the latest
 // base revision described by the Limine boot protocol specification.
@@ -137,17 +140,31 @@ void kmain(void) {
             hcf();
         }
         
-        // Initialize interrupt system
-        kprintf(10, 155, "Initializing interrupt system...");
+        // Initialize GDT and TSS first (before interrupts need our code segment)
+        kprintf(10, 155, "Initializing GDT and TSS...");
+        DEBUG_INFO("Starting GDT/TSS initialization\n");
+        gdt_init();
+        kprintf(10, 170, "GDT/TSS initialized successfully");
+        DEBUG_INFO("GDT/TSS initialization completed\n");
+        
+        // Initialize interrupt system (uses our GDT's code segment)
+        kprintf(10, 185, "Initializing interrupt system...");
         DEBUG_INFO("Starting interrupt system initialization\n");
         interrupt_init();
-        kprintf(10, 170, "Interrupt system initialized successfully");
+        kprintf(10, 200, "Interrupt system initialized successfully");
         DEBUG_INFO("Interrupt system initialization completed\n");
         
         // Initialize timer system (PIT + PIC)
-        kprintf(10, 185, "Initializing timer system...");
+        kprintf(10, 215, "Initializing timer system...");
         timer_init();
-        kprintf(10, 200, "Timer system initialized successfully");
+        kprintf(10, 230, "Timer system initialized successfully");
+        
+        // Initialize scheduler
+        kprintf(10, 245, "Initializing scheduler...");
+        DEBUG_INFO("Initializing scheduler\n");
+        scheduler_init();
+        kprintf(10, 260, "Scheduler initialized successfully");
+        DEBUG_INFO("Scheduler initialization completed\n");
         
         // Test physical memory allocation
         void *page1 = physical_alloc_page();
